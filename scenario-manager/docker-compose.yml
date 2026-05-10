@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  scenario-manager:
+    image: python:3.11-slim
+    container_name: scenario-manager
+    working_dir: /app
+
+    # Install dependencies and run the app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             python app.py"
+
+    volumes:
+      # Mount the entire app folder for code persistence
+      - /mnt/user/appdata/scenario-manager:/app
+
+      # Mount scenarios folder
+      - /mnt/user/scenarios:/scenarios
+
+    environment:
+      # Change these values:
+      - SECRET_KEY=your-super-secret-key-change-this
+      - SCENARIOS_PATH=/scenarios
+      - FLASK_ENV=production
+
+    ports:
+      - "5000:5000"
+
+    restart: unless-stopped
+
+    # Optional: Set memory limit
+    deploy:
+      resources:
+        limits:
+          memory: 512M
