@@ -1494,6 +1494,12 @@ namespace ReforgerServerApp
 
     private void HandleServerStatusEvent(object sender, ServerStatusEventArgs e)
     {
+      if (serverAddressStatusLabel.InvokeRequired)
+      {
+        serverAddressStatusLabel.Invoke(() => HandleServerStatusEvent(sender, e));
+        return;
+      }
+
       const string serverOfflineString = "Server is offline.";
       if (!e.ServerOnline)
       {
