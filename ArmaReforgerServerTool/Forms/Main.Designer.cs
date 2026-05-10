@@ -520,7 +520,7 @@ namespace ReforgerServerApp
       enabledMods.Location = new Point(335, 74);
       enabledMods.Name = "enabledMods";
       enabledMods.SelectionMode = SelectionMode.MultiExtended;
-      enabledMods.Size = new Size(291, 634);
+      enabledMods.Size = new Size(291, 610);
       enabledMods.TabIndex = 1;
       // 
       // availableMods
@@ -531,7 +531,7 @@ namespace ReforgerServerApp
       availableMods.Location = new Point(6, 74);
       availableMods.Name = "availableMods";
       availableMods.SelectionMode = SelectionMode.MultiExtended;
-      availableMods.Size = new Size(294, 634);
+      availableMods.Size = new Size(294, 610);
       availableMods.TabIndex = 0;
       availableMods.SelectedIndexChanged += AvailableModsSelectedIndexChanged;
       // 

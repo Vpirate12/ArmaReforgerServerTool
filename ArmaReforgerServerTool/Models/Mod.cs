@@ -108,6 +108,13 @@ namespace ReforgerServerApp
       return modId!.GetHashCode() + name!.GetHashCode();
     }
 
+    public static HtmlDocument GetModPageHtml(string modId)
+    {
+      string fetchUrl = $"{ToolPropertiesManager.GetInstance().GetToolProperties().armaWorkshopUrl}/{modId}";
+      HtmlWeb web = new();
+      return web.Load(fetchUrl);
+    }
+
     public static List<string> GetScenariosForMod(string modId)
     {
       List<string> scenarios = new();

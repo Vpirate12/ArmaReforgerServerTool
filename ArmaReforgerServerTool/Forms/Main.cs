@@ -29,6 +29,12 @@ namespace ReforgerServerApp
     private const int MAX_GRAPH_POINTS = 60;
     private const int STATUS_REFRESH_INTERVAL_MS = 500; // Refresh every 500ms for responsive UI
 
+    // Mod dependency validation
+    private bool m_modsValidated = false;
+    private Button? m_checkModsBtn;
+    private Label? m_checkModsStatusLabel;
+    private ProgressBar? m_checkModsProgressBar;
+
     public Main()
     {
       InitializeComponent();
@@ -126,6 +132,9 @@ namespace ReforgerServerApp
       double totalSystemMemoryGb = gcInfo.TotalAvailableMemoryBytes / (1024.0 * 1024.0 * 1024.0);
       chartMem.ChartAreas[0].AxisY.Maximum = Math.Ceiling(totalSystemMemoryGb);
       chartMem.ChartAreas[0].AxisY.Minimum = 0; // Lock the bottom to 0 for proper scale
+
+      CreateModValidationControls();
+      ConfigurationManager.GetInstance().GetEnabledMods().ListChanged += OnEnabledModsChanged;
     }
 
     /// <summary>
@@ -178,7 +187,7 @@ namespace ReforgerServerApp
         {
           steamCmdAlert.Text = $"Using Arma Reforger Server found at: \"{FileIOManager.GetInstance().GetInstallDirectory()}\"";
           downloadSteamCmdBtn.Enabled = false;
-          startServerBtn.Enabled = true;
+          UpdateStartButtonState();
           deleteServerFilesBtn.Enabled = true;
           loadSaveGameBtn.Enabled = true;
         }
@@ -574,6 +583,9 @@ namespace ReforgerServerApp
       moveModPosDownBtn.Enabled = enabled;
       loadSaveGameBtn.Enabled = enabled;
       keepServerUpdated.Enabled = enabled;
+
+      if (m_checkModsBtn != null)
+        m_checkModsBtn.Enabled = enabled;
 
       // The clipboard buttons are the opposite
       copyAddressBtn.Enabled = !enabled;
@@ -1541,7 +1553,10 @@ namespace ReforgerServerApp
       }
       else
       {
-        startServerBtn.Enabled = e.startServerBtnEnabled;
+        if (e.startServerBtnEnabled)
+          UpdateStartButtonState();
+        else
+          startServerBtn.Enabled = false;
         serverRunningLabel.Text = e.serverRunningLabelText;
         startServerBtn.IconChar = e.buttonIconChar;
         EnableServerFields(e.enableServerFields);
@@ -1830,6 +1845,125 @@ namespace ReforgerServerApp
       }
     }
 
+    // -------------------------------------------------------------------------
+    // Mod dependency validation
+    // -------------------------------------------------------------------------
+
+    private void CreateModValidationControls()
+    {
+      // Position the strip 29px above the bottom of groupBox2 so it sits just
+      // above tableLayoutPanel1/2 (the existing button rows at ~4px from bottom).
+      int stripHeight = 23;
+      int stripY = groupBox2.ClientSize.Height - stripHeight - 29;
+      int x = 6;
+      int rightEdge = groupBox2.ClientSize.Width - 6;
+
+      m_checkModsBtn = new Button
+      {
+        Text = "Check Mods",
+        Location = new Point(x, stripY),
+        Size = new Size(100, stripHeight),
+        Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+      };
+      m_checkModsBtn.Click += StartModValidationClicked;
+
+      m_checkModsProgressBar = new ProgressBar
+      {
+        Location = new Point(x + 106, stripY),
+        Size = new Size(rightEdge - x - 106, stripHeight),
+        Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+        Minimum = 0,
+        Maximum = 100,
+        Value = 0,
+        Visible = false
+      };
+
+      m_checkModsStatusLabel = new Label
+      {
+        Text = "Mod check required before starting.",
+        Location = new Point(x + 106, stripY + 4),
+        Size = new Size(rightEdge - x - 106, stripHeight),
+        Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+        AutoSize = false,
+        TextAlign = ContentAlignment.MiddleLeft
+      };
+
+      groupBox2.Controls.Add(m_checkModsBtn);
+      groupBox2.Controls.Add(m_checkModsProgressBar);
+      groupBox2.Controls.Add(m_checkModsStatusLabel);
+
+      UpdateStartButtonState();
+    }
+
+    private void StartModValidationClicked(object? sender, EventArgs e)
+    {
+      if (m_checkModsBtn == null || m_checkModsProgressBar == null || m_checkModsStatusLabel == null) return;
+
+      m_checkModsBtn.Enabled = false;
+      m_checkModsProgressBar.Value = 0;
+      m_checkModsProgressBar.Visible = true;
+      m_checkModsStatusLabel.Visible = false;
+
+      IList<Mod> snapshot = ConfigurationManager.GetInstance().GetEnabledMods().ToArray();
+
+      Thread t = new(() =>
+      {
+        (List<Mod> sorted, List<Mod> addedMods, List<string> warnings) =
+            ModDependencyManager.ResolveDependencies(snapshot, (done, total) =>
+            {
+              if (m_checkModsProgressBar.IsHandleCreated && total > 0)
+                m_checkModsProgressBar.Invoke(() =>
+                    m_checkModsProgressBar.Value = Math.Min(100, (int)(done * 100.0 / total)));
+            });
+        m_checkModsProgressBar.Invoke(() => HandleValidationComplete(sorted, addedMods, warnings));
+      });
+      t.IsBackground = true;
+      t.Start();
+    }
+
+    private void HandleValidationComplete(List<Mod> sorted, List<Mod> added, List<string> warnings)
+    {
+      if (m_checkModsBtn == null || m_checkModsProgressBar == null || m_checkModsStatusLabel == null) return;
+
+      m_checkModsProgressBar.Visible = false;
+      m_checkModsStatusLabel.Visible = true;
+      m_checkModsBtn.Enabled = true;
+
+      ConfigurationManager.GetInstance().ApplySortedModList(sorted);
+      ResetModFilters();
+
+      m_modsValidated = true;
+
+      if (warnings.Count > 0)
+        m_checkModsStatusLabel.Text = $"Check complete with {warnings.Count} warning(s). See log.";
+      else if (added.Count > 0)
+        m_checkModsStatusLabel.Text = $"Check passed — {added.Count} dependency mod(s) added, list reordered.";
+      else
+        m_checkModsStatusLabel.Text = "All mods OK.";
+
+      UpdateStartButtonState();
+    }
+
+    private void OnEnabledModsChanged(object? sender, ListChangedEventArgs e)
+    {
+      m_modsValidated = false;
+      if (m_checkModsStatusLabel != null)
+        m_checkModsStatusLabel.Text = "Mod list changed — re-check required.";
+      UpdateStartButtonState();
+    }
+
+    private void UpdateStartButtonState()
+    {
+      if (startServerBtn.InvokeRequired)
+      {
+        startServerBtn.Invoke(UpdateStartButtonState);
+        return;
+      }
+      bool steamCmdInstalled = FileIOManager.GetInstance().IsSteamCMDInstalled();
+      bool modsOk = m_modsValidated || ConfigurationManager.GetInstance().GetEnabledMods().Count == 0;
+      startServerBtn.Enabled = steamCmdInstalled && modsOk;
+    }
+
     /// <summary>
     /// Event Handler for when the application is closing
     /// </summary>
@@ -1847,6 +1981,7 @@ namespace ReforgerServerApp
       ProcessManager.GetInstance().UpdateServerStatusEvent -= HandleServerStatusEvent;
       ConfigurationManager.GetInstance().UpdateScenarioIdFromLoadedConfigEvent -= HandleUpdateScenarioIdFromLoadedConfigEvent;
       m_serverStatusParser.UpdateServerStatus -= HandleServerStatusEvent;
+      ConfigurationManager.GetInstance().GetEnabledMods().ListChanged -= OnEnabledModsChanged;
 
       // Cleanup status refresh timer
       if (m_statusRefreshTimer != null)

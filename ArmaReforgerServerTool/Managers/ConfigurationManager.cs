@@ -408,6 +408,29 @@ namespace ReforgerServerApp
     }
 
     /// <summary>
+    /// Replaces the enabled mod list with <paramref name="sorted"/> in the given order.
+    /// Uses the snapshot-clear pattern to avoid the index-skipping bug.
+    /// Any mod removed from enabled that isn't already in available is moved back there.
+    /// </summary>
+    public void ApplySortedModList(List<Mod> sorted)
+    {
+      Mod[] previouslyEnabled = m_enabledMods.ToArray();
+      m_enabledMods.Clear();
+      foreach (Mod mod in previouslyEnabled)
+      {
+        if (!m_availableMods.Contains(mod))
+          m_availableMods.Add(mod);
+      }
+      foreach (Mod mod in sorted)
+      {
+        if (m_availableMods.Contains(mod))
+          m_availableMods.Remove(mod);
+        if (!m_enabledMods.Contains(mod))
+          m_enabledMods.Add(mod);
+      }
+    }
+
+    /// <summary>
     /// Utility method for moving a mod from one list to another
     /// </summary>
     /// <param name="mod">Mod to move</param>
