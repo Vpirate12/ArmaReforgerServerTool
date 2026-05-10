@@ -25,7 +25,9 @@ namespace ReforgerServerApp
     private BindingSource m_availableModsBindingSource;
     private BindingSource m_enabledModsBindingSource;
     private ServerStatusParser m_serverStatusParser;
+    private System.Timers.Timer m_statusRefreshTimer;
     private const int MAX_GRAPH_POINTS = 60;
+    private const int STATUS_REFRESH_INTERVAL_MS = 500; // Refresh every 500ms for responsive UI
 
     public Main()
     {
@@ -58,6 +60,12 @@ namespace ReforgerServerApp
 
       m_serverStatusParser = new();
       m_serverStatusParser.UpdateServerStatus += HandleServerStatusEvent;
+
+      // Initialize Status Refresh Timer for responsive UI updates
+      m_statusRefreshTimer = new System.Timers.Timer(STATUS_REFRESH_INTERVAL_MS);
+      m_statusRefreshTimer.Elapsed += (s, e) => HandleServerStatusEvent(this, m_serverStatusParser.GetCurrentStatus());
+      m_statusRefreshTimer.AutoReset = true;
+      m_statusRefreshTimer.Enabled = false;
 
       HandleServerStatusEvent(this, new());
 
@@ -406,6 +414,9 @@ namespace ReforgerServerApp
         Log.Error("Main - Failed to start server due to issues with auto restart logic. Cannot continue.");
         return;
       }
+
+      bool isStarting = !ProcessManager.GetInstance().IsServerStarted();
+
       // If we are starting the server for the first time and using the automatic restart functionality, configure the timer
       if (autoRestartDaily.Checked() && !ProcessManager.GetInstance().IsServerUsingTimer())
       {
@@ -424,6 +435,22 @@ namespace ReforgerServerApp
       {
         CreateLaunchArguments();
         ProcessManager.GetInstance().StartStopServer();
+      }
+
+      // Interval restart is independent of the daily restart — handle it separately
+      AdvancedServerParameterNumeric? intervalRestartParam =
+          ConfigurationManager.GetInstance().GetAdvancedServerParametersDictionary()["intervalRestartHours"] as AdvancedServerParameterNumeric;
+
+      if (intervalRestartParam != null && intervalRestartParam.Checked())
+      {
+        if (isStarting)
+          ProcessManager.GetInstance().ConfigureIntervalRestartTask(Convert.ToInt32(intervalRestartParam.ParameterValue));
+        else
+          ProcessManager.GetInstance().CancelIntervalRestartTask();
+      }
+      else if (!isStarting)
+      {
+        ProcessManager.GetInstance().CancelIntervalRestartTask();
       }
     }
 
@@ -1068,6 +1095,19 @@ namespace ReforgerServerApp
       autoRestartOnCrash.CheckBox.Checked = loadedSettings.ContainsKey("autoRestartOnCrash") ? loadedSettings["autoRestartOnCrash"].Enabled : false;
       advancedParametersPanel.Controls.Add(autoRestartOnCrash);
 
+      AdvancedServerParameterNumeric intervalRestart = new()
+      {
+        ParameterName = "intervalRestartHours",
+        ParameterFriendlyName = "Interval Restart (hours)",
+        Description = "Restart the server every N hours with RCON player warnings at 10, 5, and 1 minute(s) before shutdown. Requires RCON to be enabled.",
+        ParameterMin = 1,
+        ParameterMax = 24,
+        ParameterIncrement = 1,
+        ParameterValue = Convert.ToInt32(loadedSettings.GetValueOrDefault("intervalRestartHours", SavedState.DEFAULT_INTERVAL_RESTART_HOURS).Value)
+      };
+      intervalRestart.CheckBox.Checked = loadedSettings.ContainsKey("intervalRestartHours") && loadedSettings["intervalRestartHours"].Enabled;
+      advancedParametersPanel.Controls.Add(intervalRestart);
+
       AdvancedServerParameterNumeric autoReload = new()
       {
         ParameterName = "autoreload",
@@ -1413,7 +1453,19 @@ namespace ReforgerServerApp
         joinCodeStatusLabel.Text = serverOfflineString;
         playerCountStatusLabel.Text = serverOfflineString;
         flagStatusPB.Image = null;
+
+        // Stop refresh timer when server goes offline
+        if (m_statusRefreshTimer != null)
+        {
+          m_statusRefreshTimer.Enabled = false;
+        }
         return;
+      }
+
+      // Start refresh timer when server is online for responsive updates
+      if (m_statusRefreshTimer != null && !m_statusRefreshTimer.Enabled)
+      {
+        m_statusRefreshTimer.Enabled = true;
       }
       if (e.LastFPS > 0 || e.LastMem > 0)
       {
@@ -1789,6 +1841,23 @@ namespace ReforgerServerApp
       {
         ProcessManager.GetInstance().KillServer();
       }
+
+      ProcessManager.GetInstance().UpdateGuiControlsEvent -= HandleUpdateGuiControlsEvent;
+      ProcessManager.GetInstance().UpdateSteamCmdLogEvent -= HandleUpdateSteamCmdLogEvent;
+      ProcessManager.GetInstance().UpdateServerStatusEvent -= HandleServerStatusEvent;
+      ConfigurationManager.GetInstance().UpdateScenarioIdFromLoadedConfigEvent -= HandleUpdateScenarioIdFromLoadedConfigEvent;
+      m_serverStatusParser.UpdateServerStatus -= HandleServerStatusEvent;
+
+      // Cleanup status refresh timer
+      if (m_statusRefreshTimer != null)
+      {
+        m_statusRefreshTimer.Stop();
+        m_statusRefreshTimer.Dispose();
+      }
+
+      m_availableModsBindingSource.Dispose();
+      m_enabledModsBindingSource.Dispose();
+      ProcessManager.GetInstance().Dispose();
 
       UpdateStateForAdvancedSettings();
 

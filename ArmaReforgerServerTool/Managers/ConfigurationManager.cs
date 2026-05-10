@@ -94,10 +94,14 @@ namespace ReforgerServerApp
     /// <param name="input"></param>
     public void PopulateServerConfiguration(string input)
     {
-      // First move mods back to available mods so we don't lose them
-      for (int i = 0; i < m_enabledMods.Count; i++)
+      // Move all enabled mods back to available. ToArray() snapshots first to avoid
+      // skip-every-other-item bug that occurs when removing from a list during index iteration.
+      Mod[] previouslyEnabled = m_enabledMods.ToArray();
+      m_enabledMods.Clear();
+      foreach (Mod mod in previouslyEnabled)
       {
-        MoveMod(m_enabledMods[i], m_enabledMods, m_availableMods);
+        if (!m_availableMods.Contains(mod))
+          m_availableMods.Add(mod);
       }
 
       try
@@ -330,10 +334,13 @@ namespace ReforgerServerApp
 
     public void ImportModsList(List<Mod> modsToImport)
     {
-      // First move mods back to available mods so we don't lose them
-      for (int i = 0; i < m_enabledMods.Count; i++)
+      // Same snapshot-clear pattern as PopulateServerConfiguration to avoid index-skipping bug.
+      Mod[] previouslyEnabled = m_enabledMods.ToArray();
+      m_enabledMods.Clear();
+      foreach (Mod mod in previouslyEnabled)
       {
-        MoveMod(m_enabledMods[i], m_enabledMods, m_availableMods);
+        if (!m_availableMods.Contains(mod))
+          m_availableMods.Add(mod);
       }
 
       foreach(Mod mod in modsToImport)

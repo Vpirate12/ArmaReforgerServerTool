@@ -182,5 +182,14 @@ namespace Longbow.Utils
       TryAndParsePingSite(logLine);
       TryAndParseStats(logLine);
     }
+
+    /// <summary>
+    /// Returns the current/last known server status without clearing it.
+    /// Used by the UI refresh timer to get the latest data without resetting values.
+    /// </summary>
+    public ServerStatusEventArgs GetCurrentStatus()
+    {
+      return m_serverStatus;
+    }
   }
 }

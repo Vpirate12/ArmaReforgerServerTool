@@ -47,7 +47,9 @@ namespace ReforgerServerApp.Managers
     private bool m_isServerUsingTimer;
     private Process m_steamCmdUpdateProcess;
     private Process m_serverProcess;
+    private BackgroundWorker? m_worker;
     private readonly CancellationTokenSource m_timerCancellationTokenSource;
+    private CancellationTokenSource? m_intervalRestartCts;
     private LaunchArguments m_launchArgumentsModel;
 
     public delegate void UpdateSteamCmdLogEventHandler(object sender, SteamCmdLogEventArgs e);
@@ -89,10 +91,6 @@ namespace ReforgerServerApp.Managers
     /// <param name="e"></param>
     public async void StartStopServer(bool triggeredByAutoRestart = false)
     {
-      BackgroundWorker worker = new();
-      worker.WorkerSupportsCancellation = true;
-      worker.DoWork += SteamCmdUpdateWorkerDoWork;
-
       if (m_isServerStarted)
       {
         if (!FileIOManager.GetInstance().ResetServerFile())
@@ -101,7 +99,6 @@ namespace ReforgerServerApp.Managers
           return;
         }
 
-        worker.CancelAsync();
         try
         {
           Log.Information("ProcessManager - User stopped server.");
@@ -123,6 +120,7 @@ namespace ReforgerServerApp.Managers
           }
 
           m_serverProcess.Kill();
+          m_serverProcess.Dispose();
           m_isServerStarted = false;
 
           ServerStatusEventArgs statusArgs = new()
@@ -208,7 +206,10 @@ namespace ReforgerServerApp.Managers
               $"It is important to note that your server may not work as intended as the experimental branch frequently contains breaking changes.{Environment.NewLine}");
           OnUpdateSteamCmdLogEvent(exp);
         }
-        worker.RunWorkerAsync();
+        m_worker?.Dispose();
+        m_worker = new() { WorkerSupportsCancellation = true };
+        m_worker.DoWork += SteamCmdUpdateWorkerDoWork;
+        m_worker.RunWorkerAsync();
       }
     }
 
@@ -218,9 +219,6 @@ namespace ReforgerServerApp.Managers
     /// </summary>
     private async void StartStopServerUsingTimer()
     {
-      BackgroundWorker worker = new();
-      worker.WorkerSupportsCancellation = true;
-      worker.DoWork += SteamCmdUpdateWorkerDoWork;
       GuiModelEventArgs guiModel;
       SteamCmdLogEventArgs steamCmd;
 
@@ -233,7 +231,6 @@ namespace ReforgerServerApp.Managers
         }
 
         m_isServerStarted = false;
-        worker.CancelAsync();
 
         guiModel = new()
         {
@@ -302,7 +299,10 @@ namespace ReforgerServerApp.Managers
         OnUpdateSteamCmdLogEvent(steamCmd);
       }
 
-      worker.RunWorkerAsync();
+      m_worker?.Dispose();
+      m_worker = new() { WorkerSupportsCancellation = true };
+      m_worker.DoWork += SteamCmdUpdateWorkerDoWork;
+      m_worker.RunWorkerAsync();
     }
 
     /// <summary>
@@ -348,9 +348,10 @@ namespace ReforgerServerApp.Managers
       m_steamCmdUpdateProcess.WaitForExit();
       // Wait a split second to ensure the stream readers finish emptying the pipe
       Task.WaitAll(steamStdout, steamStderr);
+      bool steamCmdExited = m_steamCmdUpdateProcess.HasExited;
+      m_steamCmdUpdateProcess.Dispose();
 
-
-      if (m_steamCmdUpdateProcess.HasExited)
+      if (steamCmdExited)
       {
         GuiModelEventArgs guiModel = new()
         {
@@ -382,6 +383,7 @@ namespace ReforgerServerApp.Managers
           CreateNoWindow = true
         };
 
+        m_serverProcess.Dispose();
         m_serverProcess = new()
         {
           EnableRaisingEvents = true,
@@ -625,6 +627,81 @@ namespace ReforgerServerApp.Managers
       }
       Log.Information("Launching server with the following launch arguments: \"{args}\"", args);
       return args;
+    }
+
+    public bool IsIntervalRestartEnabled => m_intervalRestartCts != null && !m_intervalRestartCts.IsCancellationRequested;
+
+    public void ConfigureIntervalRestartTask(int intervalHours)
+    {
+      m_intervalRestartCts?.Cancel();
+      m_intervalRestartCts?.Dispose();
+      m_intervalRestartCts = new CancellationTokenSource();
+      _ = RunIntervalRestartAsync(TimeSpan.FromHours(intervalHours), m_intervalRestartCts.Token);
+      Log.Information("ProcessManager - Interval restart configured for every {hours} hour(s).", intervalHours);
+      OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: Interval restart active — server will restart every {intervalHours} hour(s) with player warnings.{Environment.NewLine}"));
+    }
+
+    public void CancelIntervalRestartTask()
+    {
+      if (m_intervalRestartCts == null) return;
+      m_intervalRestartCts.Cancel();
+      m_intervalRestartCts.Dispose();
+      m_intervalRestartCts = null;
+      Log.Information("ProcessManager - Interval restart cancelled.");
+      OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: Interval restart cancelled.{Environment.NewLine}"));
+    }
+
+    private static readonly (string Message, TimeSpan WaitAfter)[] s_restartWarnings =
+    {
+      ("Server restarting in 10 minutes.", TimeSpan.FromMinutes(5)),
+      ("Server restarting in 5 minutes.",  TimeSpan.FromMinutes(4)),
+      ("Server restarting in 1 minute.",   TimeSpan.FromMinutes(1)),
+    };
+
+    private async Task RunIntervalRestartAsync(TimeSpan interval, CancellationToken ct)
+    {
+      while (!ct.IsCancellationRequested)
+      {
+        TimeSpan warningLeadTime = TimeSpan.FromMinutes(10);
+        TimeSpan initialWait = interval > warningLeadTime ? interval - warningLeadTime : TimeSpan.Zero;
+
+        if (initialWait > TimeSpan.Zero)
+          await Task.Delay(initialWait, ct).ConfigureAwait(false);
+
+        foreach (var (message, waitAfter) in s_restartWarnings)
+        {
+          if (ct.IsCancellationRequested) return;
+          await RconManager.GetInstance().SendBroadcastAsync(message);
+          OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Interval Restart] {message}{Environment.NewLine}"));
+          Log.Information("ProcessManager - Interval restart warning: {msg}", message);
+          await Task.Delay(waitAfter, ct).ConfigureAwait(false);
+        }
+
+        if (ct.IsCancellationRequested) return;
+
+        await RconManager.GetInstance().SendBroadcastAsync("Server is restarting now. See you shortly!");
+        OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Interval Restart] Restarting server now...{Environment.NewLine}"));
+        Log.Information("ProcessManager - Interval restart: restarting server.");
+
+        if (m_isServerStarted)
+        {
+          StartStopServer(true);
+          int delayMs = ToolPropertiesManager.GetInstance().GetToolProperties().autoRestartTime_ms;
+          await Task.Delay(delayMs, ct).ConfigureAwait(false);
+          if (!ct.IsCancellationRequested)
+            StartStopServer(true);
+        }
+      }
+    }
+
+    public void Dispose()
+    {
+      m_timerCancellationTokenSource.Dispose();
+      m_intervalRestartCts?.Cancel();
+      m_intervalRestartCts?.Dispose();
+      m_worker?.Dispose();
+      m_serverProcess.Dispose();
+      m_steamCmdUpdateProcess.Dispose();
     }
   }
 }

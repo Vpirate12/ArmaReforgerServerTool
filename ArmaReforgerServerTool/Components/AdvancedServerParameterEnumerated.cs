@@ -21,8 +21,14 @@ namespace ReforgerServerApp.Components
 
     public override object ParameterValue
     {
-      get => parameterValue;
-      set => parameterValue = (ComboBox) value;
+      get => (string) parameterValue.SelectedItem;
+      set
+      {
+        // Find and select the item that matches the provided value
+        int index = parameterValue.Items.IndexOf(value);
+        if (index >= 0)
+          parameterValue.SelectedIndex = index;
+      }
     }
 
     public List<string> ParameterAvailableValues

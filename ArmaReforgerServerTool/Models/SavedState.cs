@@ -49,6 +49,7 @@ namespace Longbow.Models
     public static readonly AdvancedSetting DEFAULT_FREEZE_CHECK = new("freezeCheck", 300, false);
     public static readonly AdvancedSetting DEFAULT_FREEZE_CHECK_MODE = new("freezeCheckMode", "minidump", false);
     public static readonly AdvancedSetting DEFAULT_FORCE_DISABLE_NIGHT_GRAIN = new("forceDisableNightGrain", false);
+    public static readonly AdvancedSetting DEFAULT_INTERVAL_RESTART_HOURS = new("intervalRestartHours", 4, false);
 
     public Dictionary<string, AdvancedSetting> advancedSettings { get; set; }
     public string serverLocation { get; set; }
@@ -111,6 +112,7 @@ namespace Longbow.Models
       advancedSettings[DEFAULT_FREEZE_CHECK.Name] = DEFAULT_FREEZE_CHECK;
       advancedSettings[DEFAULT_FREEZE_CHECK_MODE.Name] = DEFAULT_FREEZE_CHECK_MODE;
       advancedSettings[DEFAULT_FORCE_DISABLE_NIGHT_GRAIN.Name] = DEFAULT_FORCE_DISABLE_NIGHT_GRAIN;
+      advancedSettings[DEFAULT_INTERVAL_RESTART_HOURS.Name] = DEFAULT_INTERVAL_RESTART_HOURS;
       return advancedSettings;
     }
   }
