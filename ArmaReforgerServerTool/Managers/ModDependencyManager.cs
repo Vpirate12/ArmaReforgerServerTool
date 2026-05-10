@@ -1,9 +1,9 @@
 /******************************************************************************
  * File Name:    ModDependencyManager.cs
  * Project:      Longbow
- * Description:  Resolves Arma Reforger mod dependency order by scraping the
- *               workshop page for each enabled mod. Performs a topological sort
- *               so that required mods load before the mods that depend on them.
+ * Description:  Resolves Arma Reforger mod dependency order by reading the
+ *               __NEXT_DATA__ JSON embedded in each workshop page.
+ *               Performs a topological sort so required mods load first.
  *               Auto-adds any missing dependency mods to the enabled list.
  *
  * Author:       Longbow contributors
@@ -12,100 +12,92 @@
 using HtmlAgilityPack;
 using ReforgerServerApp.Managers;
 using Serilog;
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using HtmlDocument = HtmlAgilityPack.HtmlDocument;
 
 namespace ReforgerServerApp
 {
   internal static class ModDependencyManager
   {
-    // Matches a workshop URL path ending in exactly one 16-char hex mod ID.
-    // e.g. href="/workshop/591AF5BDA9F7CE8B"
-    private static readonly Regex s_depHrefPattern =
-        new(@"/workshop/([0-9A-Fa-f]{16})$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // Data extracted from one workshop page load.
+    private record ModPageData(
+        string Name,
+        List<string> DepIds,
+        Dictionary<string, string> DepIdToName);  // depId → dep display name (from same JSON)
 
     /// <summary>
-    /// Loads and returns the workshop HTML page for <paramref name="modId"/>.
-    /// Throws on network or parse error — caller is responsible for handling.
+    /// Loads the workshop page for <paramref name="modId"/> and parses the
+    /// <c>__NEXT_DATA__</c> JSON blob embedded by the Next.js SSR layer.
+    /// Returns the mod's display name and its declared dependency list.
     /// </summary>
-    private static HtmlDocument LoadModPage(string modId)
+    private static ModPageData LoadAndParsePage(string modId)
     {
       string url = $"{ToolPropertiesManager.GetInstance().GetToolProperties().armaWorkshopUrl}/{modId}";
       HtmlWeb web = new();
-      return web.Load(url);
-    }
+      HtmlDocument doc = web.Load(url);
 
-    /// <summary>
-    /// Extracts the display name from an already-loaded workshop page.
-    /// Falls back to the mod ID string if the title can't be parsed.
-    /// </summary>
-    private static string ExtractModName(HtmlDocument doc, string modId)
-    {
-      // Try h1 first, then page <title>
-      string? raw = doc.DocumentNode.SelectSingleNode("//h1")?.InnerText
-                 ?? doc.DocumentNode.SelectSingleNode("//title")?.InnerText;
-      if (string.IsNullOrWhiteSpace(raw)) return modId;
-      // Strip " | Arma Reforger Workshop" suffix if present
-      int pipe = raw.IndexOf('|');
-      return (pipe > 0 ? raw[..pipe] : raw).Trim();
-    }
-
-    /// <summary>
-    /// Returns the mod IDs of all declared dependencies for <paramref name="modId"/>
-    /// using an already-loaded <paramref name="doc"/>.
-    /// </summary>
-    private static List<string> ExtractDependencyIds(HtmlDocument doc, string modId)
-    {
-      List<string> deps = new();
-      HtmlNodeCollection? links = doc.DocumentNode.SelectNodes("//a[@href]");
-      if (links == null) return deps;
-
-      foreach (HtmlNode link in links)
+      HtmlNode? scriptNode = doc.GetElementbyId("__NEXT_DATA__");
+      if (scriptNode == null)
       {
-        string href = link.GetAttributeValue("href", string.Empty);
-        Match m = s_depHrefPattern.Match(href);
-        if (!m.Success) continue;
-        string depId = m.Groups[1].Value.ToUpperInvariant();
-        if (!depId.Equals(modId, StringComparison.OrdinalIgnoreCase) && !deps.Contains(depId))
-          deps.Add(depId);
+        Log.Warning("ModDependencyManager - No __NEXT_DATA__ found on page for {id}", modId);
+        return new ModPageData(modId, new List<string>(), new Dictionary<string, string>());
       }
-      return deps;
-    }
 
-    /// <summary>
-    /// Fetches mod name for a dependency that is not yet in the enabled list.
-    /// Returns a <see cref="Mod"/> with <c>name = modId</c> on failure.
-    /// </summary>
-    private static Mod FetchNewMod(string modId)
-    {
+      string name = modId;
+      List<string> depIds = new();
+      Dictionary<string, string> depNames = new(StringComparer.OrdinalIgnoreCase);
+
       try
       {
-        HtmlDocument doc = LoadModPage(modId);
-        string name = ExtractModName(doc, modId);
-        return new Mod(modId, name);
+        using JsonDocument jdoc = JsonDocument.Parse(scriptNode.InnerText);
+        JsonElement asset = jdoc.RootElement
+            .GetProperty("props")
+            .GetProperty("pageProps")
+            .GetProperty("asset");
+
+        if (asset.TryGetProperty("name", out JsonElement nameEl))
+          name = nameEl.GetString() ?? modId;
+
+        if (asset.TryGetProperty("dependencies", out JsonElement depsEl))
+        {
+          foreach (JsonElement dep in depsEl.EnumerateArray())
+          {
+            if (!dep.TryGetProperty("id", out JsonElement idEl)) continue;
+            string depId = (idEl.GetString() ?? string.Empty).ToUpperInvariant();
+            if (string.IsNullOrEmpty(depId) ||
+                depId.Equals(modId, StringComparison.OrdinalIgnoreCase)) continue;
+
+            depIds.Add(depId);
+            if (dep.TryGetProperty("name", out JsonElement depNameEl))
+              depNames[depId] = depNameEl.GetString() ?? depId;
+          }
+        }
       }
       catch (Exception ex)
       {
-        Log.Warning("ModDependencyManager - Could not fetch info for mod {id}: {msg}", modId, ex.Message);
-        return new Mod(modId, modId);
+        Log.Warning("ModDependencyManager - Failed to parse __NEXT_DATA__ for {id}: {msg}",
+            modId, ex.Message);
       }
+
+      return new ModPageData(name, depIds, depNames);
     }
 
     /// <summary>
     /// Resolves mod load order for <paramref name="enabled"/>.
     /// <para>
-    /// Phase 1 — BFS: fetches each mod's workshop page to discover direct and transitive
-    /// dependencies.  Any dependency not already in the list is added automatically.
+    /// Phase 1 — BFS: loads each mod's workshop page and reads the embedded
+    /// Next.js JSON to discover direct and transitive dependencies.
+    /// Any dependency not already in the list is added automatically.
     /// </para>
     /// <para>
-    /// Phase 2 — Topological sort (DFS): orders the full set so every dependency
-    /// appears before the mod that requires it.
+    /// Phase 2 — Topological sort (DFS): orders the full set so every
+    /// dependency appears before the mod that requires it.
     /// </para>
     /// </summary>
     /// <param name="enabled">Current enabled mod list.</param>
     /// <param name="progress">
-    /// Optional callback invoked as <c>(completed, total)</c> after each mod is
-    /// fetched so the caller can update a progress bar.
+    /// Optional callback invoked as <c>(completed, total)</c> after each mod
+    /// page is fetched so the caller can update a progress bar.
     /// </param>
     /// <returns>
     /// A tuple of (sorted list, auto-added mods, warning strings).
@@ -126,7 +118,6 @@ namespace ReforgerServerApp
       // Dependency graph: modId → list of dep modIds
       Dictionary<string, List<string>> graph = new(StringComparer.OrdinalIgnoreCase);
 
-      // BFS queue
       Queue<string> queue = new(workingSet.Keys);
       int processed = 0;
 
@@ -137,16 +128,15 @@ namespace ReforgerServerApp
           string modId = queue.Dequeue();
           if (graph.ContainsKey(modId))
           {
-            // Already processed (could be a dup from auto-added deps)
             processed++;
             progress?.Invoke(processed, workingSet.Count);
             continue;
           }
 
-          HtmlDocument? doc = null;
+          ModPageData pageData;
           try
           {
-            doc = LoadModPage(modId);
+            pageData = LoadAndParsePage(modId);
           }
           catch (Exception ex)
           {
@@ -158,17 +148,20 @@ namespace ReforgerServerApp
             continue;
           }
 
-          List<string> deps = ExtractDependencyIds(doc, modId);
-          graph[modId] = deps;
+          graph[modId] = pageData.DepIds;
 
-          foreach (string depId in deps)
+          foreach (string depId in pageData.DepIds)
           {
             if (!workingSet.ContainsKey(depId))
             {
-              Mod newMod = FetchNewMod(depId);
+              // Name comes from the parent's JSON — no extra HTTP request needed
+              string depName = pageData.DepIdToName.TryGetValue(depId, out string? n) ? n : depId;
+              Mod newMod = new(depId, depName);
               workingSet[depId] = newMod;
               added.Add(newMod);
               queue.Enqueue(depId);
+              Log.Information("ModDependencyManager - Auto-added missing dependency: {name} ({id})",
+                  depName, depId);
             }
           }
 
@@ -184,7 +177,7 @@ namespace ReforgerServerApp
         return (new List<Mod>(enabled), added, warnings);
       }
 
-      // Topological sort (iterative DFS to avoid stack overflow on deep graphs)
+      // Topological sort (recursive DFS)
       List<Mod> sorted = new();
       HashSet<string> visited = new(StringComparer.OrdinalIgnoreCase);
       HashSet<string> inStack = new(StringComparer.OrdinalIgnoreCase);
@@ -199,10 +192,8 @@ namespace ReforgerServerApp
         }
         inStack.Add(id);
         if (graph.TryGetValue(id, out List<string>? deps))
-        {
           foreach (string dep in deps)
             Visit(dep);
-        }
         inStack.Remove(id);
         visited.Add(id);
         if (workingSet.TryGetValue(id, out Mod? mod))
