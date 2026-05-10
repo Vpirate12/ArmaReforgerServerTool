@@ -17,6 +17,7 @@ using ReforgerServerApp.Components;
 using ReforgerServerApp.Models;
 using ReforgerServerApp.Utils;
 using Serilog;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
@@ -24,6 +25,12 @@ using System.Text;
 namespace ReforgerServerApp.Managers
 {
   public enum ServerRestartIntervalUnit { MINUTES, HOURS, DAYS }
+
+  internal class ScenarioRotationSwitchEventArgs : EventArgs
+  {
+    public ScenarioRotationEntry Entry { get; }
+    public ScenarioRotationSwitchEventArgs(ScenarioRotationEntry entry) { Entry = entry; }
+  }
 
   internal class SteamCmdLogEventArgs : EventArgs
   {
@@ -50,6 +57,9 @@ namespace ReforgerServerApp.Managers
     private BackgroundWorker? m_worker;
     private readonly CancellationTokenSource m_timerCancellationTokenSource;
     private CancellationTokenSource? m_intervalRestartCts;
+    private CancellationTokenSource? m_rotationCts;
+    private List<ScenarioRotationEntry>? m_rotationEntries;
+    private int m_rotationIndex = 0;
     private LaunchArguments m_launchArgumentsModel;
 
     public delegate void UpdateSteamCmdLogEventHandler(object sender, SteamCmdLogEventArgs e);
@@ -60,6 +70,9 @@ namespace ReforgerServerApp.Managers
 
     public delegate void UpdateServerStatusEventHandler(object sender, ServerStatusEventArgs e);
     public event UpdateServerStatusEventHandler UpdateServerStatusEvent;
+
+    public delegate void ScenarioRotationSwitchEventHandler(object sender, ScenarioRotationSwitchEventArgs e);
+    public event ScenarioRotationSwitchEventHandler ScenarioRotationSwitchEvent;
 
     public bool KeepServerUpdated { get; set; }
 
@@ -694,11 +707,94 @@ namespace ReforgerServerApp.Managers
       }
     }
 
+    public bool IsRotationEnabled => m_rotationCts != null && !m_rotationCts.IsCancellationRequested;
+
+    public void ConfigureRotationTask(List<ScenarioRotationEntry> entries)
+    {
+      if (entries == null || entries.Count == 0) return;
+      m_rotationCts?.Cancel();
+      m_rotationCts?.Dispose();
+      m_rotationEntries = new List<ScenarioRotationEntry>(entries);
+      m_rotationIndex = 0;
+      m_rotationCts = new CancellationTokenSource();
+      _ = RunRotationAsync(m_rotationCts.Token);
+      Log.Information("ProcessManager - Scenario rotation configured with {count} scenario(s).", entries.Count);
+      OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: Scenario rotation active — {entries.Count} scenario(s) in queue.{Environment.NewLine}"));
+    }
+
+    public void CancelRotationTask()
+    {
+      if (m_rotationCts == null) return;
+      m_rotationCts.Cancel();
+      m_rotationCts.Dispose();
+      m_rotationCts = null;
+      Log.Information("ProcessManager - Scenario rotation cancelled.");
+      OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: Scenario rotation cancelled.{Environment.NewLine}"));
+    }
+
+    protected virtual void OnScenarioRotationSwitchEvent(ScenarioRotationSwitchEventArgs e)
+    {
+      ScenarioRotationSwitchEvent?.Invoke(this, e);
+    }
+
+    private async Task RunRotationAsync(CancellationToken ct)
+    {
+      while (!ct.IsCancellationRequested && m_rotationEntries != null && m_rotationEntries.Count > 0)
+      {
+        ScenarioRotationEntry current = m_rotationEntries[m_rotationIndex];
+        TimeSpan interval = TimeSpan.FromHours(current.DurationHours);
+        TimeSpan warningLeadTime = TimeSpan.FromMinutes(10);
+        TimeSpan initialWait = interval > warningLeadTime ? interval - warningLeadTime : TimeSpan.Zero;
+
+        if (initialWait > TimeSpan.Zero)
+          await Task.Delay(initialWait, ct).ConfigureAwait(false);
+
+        if (ct.IsCancellationRequested) return;
+
+        // Advance to the next scenario
+        m_rotationIndex = (m_rotationIndex + 1) % m_rotationEntries.Count;
+        ScenarioRotationEntry next = m_rotationEntries[m_rotationIndex];
+
+        foreach (var (message, waitAfter) in s_restartWarnings)
+        {
+          if (ct.IsCancellationRequested) return;
+          string fullMsg = $"{message} Next scenario: {next.ScenarioName}";
+          await RconManager.GetInstance().SendBroadcastAsync(fullMsg);
+          OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Rotation] {fullMsg}{Environment.NewLine}"));
+          Log.Information("ProcessManager - Rotation warning: {msg}", fullMsg);
+          await Task.Delay(waitAfter, ct).ConfigureAwait(false);
+        }
+
+        if (ct.IsCancellationRequested) return;
+
+        await RconManager.GetInstance().SendBroadcastAsync($"Switching to scenario: {next.ScenarioName}. Server restarting now!");
+        OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Rotation] Switching to: {next.ScenarioName} ({next.ScenarioPath}){Environment.NewLine}"));
+        Log.Information("ProcessManager - Rotation switching to: {name}", next.ScenarioName);
+
+        // Notify UI to update the displayed scenario
+        OnScenarioRotationSwitchEvent(new(next));
+
+        // Give event handler time to update ConfigurationManager before the restart saves server.json
+        await Task.Delay(500, ct).ConfigureAwait(false);
+
+        if (m_isServerStarted)
+        {
+          StartStopServer(true);
+          int delayMs = ToolPropertiesManager.GetInstance().GetToolProperties().autoRestartTime_ms;
+          await Task.Delay(delayMs, ct).ConfigureAwait(false);
+          if (!ct.IsCancellationRequested)
+            StartStopServer(true);
+        }
+      }
+    }
+
     public void Dispose()
     {
       m_timerCancellationTokenSource.Dispose();
       m_intervalRestartCts?.Cancel();
       m_intervalRestartCts?.Dispose();
+      m_rotationCts?.Cancel();
+      m_rotationCts?.Dispose();
       m_worker?.Dispose();
       m_serverProcess.Dispose();
       m_steamCmdUpdateProcess.Dispose();

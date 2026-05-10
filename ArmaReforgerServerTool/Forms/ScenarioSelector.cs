@@ -18,12 +18,25 @@ namespace ReforgerServerApp
     private readonly Thread m_getScenariosThread;
     private bool m_getScenariosThreadRunning = true;
     private bool m_getScenariosRequested = false;
+    private readonly Action<Scenario>? m_onScenarioSelected;
 
     public ScenarioSelector(Main parent)
     {
       InitializeComponent();
       PrintSelectedScenario();
       m_parentForm = parent;
+      m_getScenariosRequested = true;
+      m_getScenariosThread = new(new ThreadStart(DoGetScenarios));
+      m_getScenariosThread.Start();
+    }
+
+    internal ScenarioSelector(Main parent, Action<Scenario> onScenarioSelected)
+    {
+      InitializeComponent();
+      m_parentForm = parent;
+      m_onScenarioSelected = onScenarioSelected;
+      selectScenarioBtn.Text = "Add to Rotation";
+      currentlySelectedLbl.Text = "Select a scenario to add to the rotation:";
       m_getScenariosRequested = true;
       m_getScenariosThread = new(new ThreadStart(DoGetScenarios));
       m_getScenariosThread.Start();
@@ -118,6 +131,21 @@ namespace ReforgerServerApp
     /// <param name="e"></param>
     private void SelectScenarioButtonClicked(object sender, EventArgs e)
     {
+      if (m_onScenarioSelected != null)
+      {
+        // Rotation-picker mode — invoke callback and close without modifying server config
+        if (manualScenarioIdTextBox.Text != string.Empty)
+        {
+          m_onScenarioSelected(new Scenario("Manual Entry", manualScenarioIdTextBox.Text));
+        }
+        else if (scenarioList.SelectedItem != null)
+        {
+          m_onScenarioSelected((Scenario)scenarioList.SelectedItem);
+        }
+        this.Close();
+        return;
+      }
+
       if (manualScenarioIdTextBox.Text != String.Empty)
       {
         ConfigurationManager.GetInstance().GetServerConfiguration().root.game.scenarioId = manualScenarioIdTextBox.Text;

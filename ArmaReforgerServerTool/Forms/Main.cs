@@ -29,6 +29,15 @@ namespace ReforgerServerApp
     private const int MAX_GRAPH_POINTS = 60;
     private const int STATUS_REFRESH_INTERVAL_MS = 500; // Refresh every 500ms for responsive UI
 
+    // Scenario Rotation UI controls
+    private CheckBox m_rotationEnabledCheckBox;
+    private ListView m_rotationListView;
+    private Button m_addRotationScenarioBtn;
+    private Button m_removeRotationScenarioBtn;
+    private Button m_moveRotationUpBtn;
+    private Button m_moveRotationDownBtn;
+    private NumericUpDown m_rotationDurationSpinner;
+
     public Main()
     {
       InitializeComponent();
@@ -42,6 +51,7 @@ namespace ReforgerServerApp
       ProcessManager.GetInstance().UpdateSteamCmdLogEvent += HandleUpdateSteamCmdLogEvent;
       ProcessManager.GetInstance().UpdateServerStatusEvent += HandleServerStatusEvent;
       ConfigurationManager.GetInstance().UpdateScenarioIdFromLoadedConfigEvent += HandleUpdateScenarioIdFromLoadedConfigEvent;
+      ProcessManager.GetInstance().ScenarioRotationSwitchEvent += HandleScenarioRotationSwitchEvent;
 
       useUpnp.Checked = SavedStateManager.GetInstance().GetLoadedAdvancedSettings().GetValueOrDefault("useUpnp", SavedState.DEFAULT_USE_UPNP).Enabled;
       NetworkManager.GetInstance().useUPnP = useUpnp.Checked;
@@ -126,6 +136,8 @@ namespace ReforgerServerApp
       double totalSystemMemoryGb = gcInfo.TotalAvailableMemoryBytes / (1024.0 * 1024.0 * 1024.0);
       chartMem.ChartAreas[0].AxisY.Maximum = Math.Ceiling(totalSystemMemoryGb);
       chartMem.ChartAreas[0].AxisY.Minimum = 0; // Lock the bottom to 0 for proper scale
+
+      CreateRotationTab();
     }
 
     /// <summary>
@@ -452,6 +464,25 @@ namespace ReforgerServerApp
       {
         ProcessManager.GetInstance().CancelIntervalRestartTask();
       }
+
+      // Scenario rotation — independent of other restart modes
+      if (m_rotationEnabledCheckBox != null && m_rotationEnabledCheckBox.Checked && m_rotationListView != null && m_rotationListView.Items.Count > 0)
+      {
+        if (isStarting)
+        {
+          var entries = GetRotationEntriesFromListView();
+          if (entries.Count > 0)
+            ProcessManager.GetInstance().ConfigureRotationTask(entries);
+        }
+        else
+        {
+          ProcessManager.GetInstance().CancelRotationTask();
+        }
+      }
+      else if (!isStarting)
+      {
+        ProcessManager.GetInstance().CancelRotationTask();
+      }
     }
 
     /// <summary>
@@ -579,6 +610,14 @@ namespace ReforgerServerApp
       copyAddressBtn.Enabled = !enabled;
       copyRconAddressBtn.Enabled = !enabled;
       copyJoinCodeBtn.Enabled = !enabled;
+
+      // Rotation tab controls
+      if (m_rotationEnabledCheckBox != null) m_rotationEnabledCheckBox.Enabled = enabled;
+      if (m_addRotationScenarioBtn != null) m_addRotationScenarioBtn.Enabled = enabled;
+      if (m_removeRotationScenarioBtn != null) m_removeRotationScenarioBtn.Enabled = enabled;
+      if (m_moveRotationUpBtn != null) m_moveRotationUpBtn.Enabled = enabled;
+      if (m_moveRotationDownBtn != null) m_moveRotationDownBtn.Enabled = enabled;
+      if (m_rotationDurationSpinner != null) m_rotationDurationSpinner.Enabled = enabled;
     }
 
     /// <summary>
@@ -1846,6 +1885,7 @@ namespace ReforgerServerApp
       ProcessManager.GetInstance().UpdateSteamCmdLogEvent -= HandleUpdateSteamCmdLogEvent;
       ProcessManager.GetInstance().UpdateServerStatusEvent -= HandleServerStatusEvent;
       ConfigurationManager.GetInstance().UpdateScenarioIdFromLoadedConfigEvent -= HandleUpdateScenarioIdFromLoadedConfigEvent;
+      ProcessManager.GetInstance().ScenarioRotationSwitchEvent -= HandleScenarioRotationSwitchEvent;
       m_serverStatusParser.UpdateServerStatus -= HandleServerStatusEvent;
 
       // Cleanup status refresh timer
@@ -1865,6 +1905,13 @@ namespace ReforgerServerApp
       SavedStateManager.GetInstance().GetSavedState().advancedSettings["useUpnp"].Enabled = useUpnp.Checked;
       SavedStateManager.GetInstance().GetSavedState().advancedSettings["useExperimental"].Enabled = useExperimentalCheckBox.Checked;
       SavedStateManager.GetInstance().GetSavedState().advancedSettings["keepServerUpdated"].Enabled = keepServerUpdated.Checked;
+
+      // Persist scenario rotation state
+      if (m_rotationEnabledCheckBox != null && m_rotationListView != null)
+      {
+        SavedStateManager.GetInstance().GetSavedState().scenarioRotationEnabled = m_rotationEnabledCheckBox.Checked;
+        SavedStateManager.GetInstance().GetSavedState().scenarioRotation = GetRotationEntriesFromListView();
+      }
 
       FileIOManager.GetInstance().WriteStateFile();
       FileIOManager.GetInstance().WriteModsDatabase();
@@ -1893,6 +1940,176 @@ namespace ReforgerServerApp
     private void OnJoinCodeToClipboard(object sender, EventArgs e)
     {
       Clipboard.SetText(joinCodeStatusLabel.Text);
+    }
+
+    private void HandleScenarioRotationSwitchEvent(object sender, ScenarioRotationSwitchEventArgs e)
+    {
+      if (InvokeRequired)
+      {
+        Invoke(new Action(() => HandleScenarioRotationSwitchEvent(sender, e)));
+        return;
+      }
+      // Update the active scenario in ConfigurationManager so the restarted server picks it up
+      ConfigurationManager.GetInstance().GetServerConfiguration().root.game.scenarioId = e.Entry.ScenarioPath;
+      loadedScenarioLabel.Text = e.Entry.ScenarioPath;
+    }
+
+    private List<ScenarioRotationEntry> GetRotationEntriesFromListView()
+    {
+      var entries = new List<ScenarioRotationEntry>();
+      if (m_rotationListView == null) return entries;
+      foreach (ListViewItem item in m_rotationListView.Items)
+      {
+        entries.Add(new ScenarioRotationEntry(
+          item.SubItems[0].Text,
+          item.SubItems[1].Text,
+          int.TryParse(item.SubItems[2].Text, out int h) ? h : 4));
+      }
+      return entries;
+    }
+
+    private void CreateRotationTab()
+    {
+      TabPage rotationTab = new TabPage("Rotation");
+
+      // Enable checkbox
+      m_rotationEnabledCheckBox = new CheckBox
+      {
+        Text = "Enable Scenario Rotation",
+        Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
+        Location = new Point(10, 10),
+        AutoSize = true,
+        Checked = SavedStateManager.GetInstance().GetSavedState().scenarioRotationEnabled
+      };
+      rotationTab.Controls.Add(m_rotationEnabledCheckBox);
+
+      // Description label
+      Label descLabel = new Label
+      {
+        Text = "Add scenarios below. When the server is running with rotation enabled, each scenario runs for the\r\n" +
+               "specified duration. RCON countdown warnings are sent at 10, 5, and 1 minute before each switch.\r\n" +
+               "Requires RCON to be enabled for player warnings (rotation still works without RCON).",
+        Location = new Point(10, 38),
+        Size = new Size(900, 52),
+        ForeColor = SystemColors.GrayText
+      };
+      rotationTab.Controls.Add(descLabel);
+
+      // ListView
+      m_rotationListView = new ListView
+      {
+        Location = new Point(10, 100),
+        Size = new Size(880, 300),
+        View = View.Details,
+        FullRowSelect = true,
+        GridLines = true,
+        MultiSelect = false
+      };
+      m_rotationListView.Columns.Add("Scenario Name", 380);
+      m_rotationListView.Columns.Add("Scenario Path", 360);
+      m_rotationListView.Columns.Add("Duration (hours)", 120);
+      rotationTab.Controls.Add(m_rotationListView);
+
+      // Load persisted rotation entries
+      foreach (var entry in SavedStateManager.GetInstance().GetSavedState().scenarioRotation)
+      {
+        ListViewItem item = new ListViewItem(entry.ScenarioName);
+        item.SubItems.Add(entry.ScenarioPath);
+        item.SubItems.Add(entry.DurationHours.ToString());
+        m_rotationListView.Items.Add(item);
+      }
+
+      // Duration spinner label
+      Label durationLabel = new Label
+      {
+        Text = "Duration (hours) for new entry:",
+        Location = new Point(10, 410),
+        AutoSize = true
+      };
+      rotationTab.Controls.Add(durationLabel);
+
+      m_rotationDurationSpinner = new NumericUpDown
+      {
+        Location = new Point(210, 407),
+        Size = new Size(60, 23),
+        Minimum = 1,
+        Maximum = 48,
+        Value = 4
+      };
+      rotationTab.Controls.Add(m_rotationDurationSpinner);
+
+      // Buttons
+      m_addRotationScenarioBtn = new Button
+      {
+        Text = "Add Scenario",
+        Location = new Point(10, 440),
+        Size = new Size(120, 30)
+      };
+      m_addRotationScenarioBtn.Click += (s, e) =>
+      {
+        ScenarioSelector selector = new ScenarioSelector(this, scenario =>
+        {
+          if (scenario == null) return;
+          int duration = (int)m_rotationDurationSpinner.Value;
+          ListViewItem item = new ListViewItem(scenario.Name);
+          item.SubItems.Add(scenario.Path);
+          item.SubItems.Add(duration.ToString());
+          m_rotationListView.Items.Add(item);
+        });
+        selector.ShowDialog();
+      };
+      rotationTab.Controls.Add(m_addRotationScenarioBtn);
+
+      m_removeRotationScenarioBtn = new Button
+      {
+        Text = "Remove",
+        Location = new Point(140, 440),
+        Size = new Size(80, 30)
+      };
+      m_removeRotationScenarioBtn.Click += (s, e) =>
+      {
+        if (m_rotationListView.SelectedItems.Count > 0)
+          m_rotationListView.Items.Remove(m_rotationListView.SelectedItems[0]);
+      };
+      rotationTab.Controls.Add(m_removeRotationScenarioBtn);
+
+      m_moveRotationUpBtn = new Button
+      {
+        Text = "▲",
+        Location = new Point(230, 440),
+        Size = new Size(40, 30)
+      };
+      m_moveRotationUpBtn.Click += (s, e) =>
+      {
+        if (m_rotationListView.SelectedItems.Count == 0) return;
+        ListViewItem item = m_rotationListView.SelectedItems[0];
+        int idx = item.Index;
+        if (idx == 0) return;
+        m_rotationListView.Items.RemoveAt(idx);
+        m_rotationListView.Items.Insert(idx - 1, item);
+        item.Selected = true;
+      };
+      rotationTab.Controls.Add(m_moveRotationUpBtn);
+
+      m_moveRotationDownBtn = new Button
+      {
+        Text = "▼",
+        Location = new Point(280, 440),
+        Size = new Size(40, 30)
+      };
+      m_moveRotationDownBtn.Click += (s, e) =>
+      {
+        if (m_rotationListView.SelectedItems.Count == 0) return;
+        ListViewItem item = m_rotationListView.SelectedItems[0];
+        int idx = item.Index;
+        if (idx == m_rotationListView.Items.Count - 1) return;
+        m_rotationListView.Items.RemoveAt(idx);
+        m_rotationListView.Items.Insert(idx + 1, item);
+        item.Selected = true;
+      };
+      rotationTab.Controls.Add(m_moveRotationDownBtn);
+
+      tabControl1.TabPages.Add(rotationTab);
     }
   }
 }
