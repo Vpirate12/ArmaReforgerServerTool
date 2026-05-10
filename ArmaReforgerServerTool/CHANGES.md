@@ -329,6 +329,49 @@ startup failures due to broken mod dependencies.
 
 ---
 
+## Upstream Overlap Analysis (as of May 2026)
+
+After PR #242 was opened, a comparison against upstream `main` (commit `a6b1ee3`) was done
+to check for any overlap with the author's concurrent work on status fetching
+(`711187a Implemented ServerStatusParser`, `cc7d15d Progress on status fetching`).
+
+### What the author independently implemented
+
+The author added the `ServerStatusParser` class and the `ServerStatusEventArgs` model as
+their own new feature. These are the same classes our status fixes build on — but they were
+added to upstream *after* our branch was cut, not taken from our code.
+
+### Our additions that are still absent from upstream
+
+Every fix in this file remains absent from upstream `main`:
+
+| Change | Status in upstream |
+|---|---|
+| `ConfigurationManager` mod load order bug (`ToArray()` fix) | ❌ Upstream still has the buggy index loop |
+| `ProcessManager` `BackgroundWorker` promoted to field | ❌ Upstream still uses local variable |
+| `ProcessManager` `m_steamCmdUpdateProcess.Dispose()` | ❌ Missing |
+| `ProcessManager` `m_serverProcess.Dispose()` in stop paths | ❌ Missing |
+| `ProcessManager.Dispose()` method | ❌ Not present |
+| `Forms/Main.cs` event handler unsubscription in `OnFormClosing` | ❌ Not present |
+| `Forms/Main.cs` 500 ms status refresh timer | ❌ Not present |
+| Timer passes last-known status (prevents field flicker) | ❌ Not present |
+| `ServerStatusParser.GetCurrentStatus()` public getter | ❌ Not present |
+| `Managers/RconManager.cs` BattlEye RCON client | ❌ Not present |
+| Interval restart feature | ❌ Not present |
+
+### One conflict to note for the PR
+
+`AdvancedServerParameterEnumerated.cs` diverged from both the original and our fix.
+The author changed the `ParameterValue` getter to `get => parameterValue`, which returns
+the entire `ComboBox` control. Our fix returns `(string) parameterValue.SelectedItem`,
+which is the semantically correct value. The author's version would throw
+`InvalidCastException` anywhere the result is treated as a string — they appear to have
+worked around it by calling `SelectedItem` directly at every call site instead. Our version
+fixes the root cause; their version works around it. Both approaches are valid but they will
+conflict on merge — the reviewer should pick one.
+
+---
+
 ## Files Changed
 
 | File | Type |
