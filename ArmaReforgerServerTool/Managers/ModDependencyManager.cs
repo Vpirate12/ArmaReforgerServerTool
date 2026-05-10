@@ -62,13 +62,15 @@ namespace ReforgerServerApp
         {
           foreach (JsonElement dep in depsEl.EnumerateArray())
           {
-            if (!dep.TryGetProperty("id", out JsonElement idEl)) continue;
+            // Each entry is { asset: { id, name }, version, ... }
+            if (!dep.TryGetProperty("asset", out JsonElement depAsset)) continue;
+            if (!depAsset.TryGetProperty("id", out JsonElement idEl)) continue;
             string depId = (idEl.GetString() ?? string.Empty).ToUpperInvariant();
             if (string.IsNullOrEmpty(depId) ||
                 depId.Equals(modId, StringComparison.OrdinalIgnoreCase)) continue;
 
             depIds.Add(depId);
-            if (dep.TryGetProperty("name", out JsonElement depNameEl))
+            if (depAsset.TryGetProperty("name", out JsonElement depNameEl))
               depNames[depId] = depNameEl.GetString() ?? depId;
           }
         }
@@ -110,6 +112,8 @@ namespace ReforgerServerApp
       List<Mod> added = new();
       List<string> warnings = new();
 
+      Log.Information("ModDependencyManager - Starting resolution for {count} enabled mods", enabled.Count);
+
       // Working set: modId (upper) → Mod
       Dictionary<string, Mod> workingSet = new(StringComparer.OrdinalIgnoreCase);
       foreach (Mod mod in enabled)
@@ -149,6 +153,10 @@ namespace ReforgerServerApp
           }
 
           graph[modId] = pageData.DepIds;
+
+          Log.Information("ModDependencyManager - {name} ({id}): {count} dep(s) declared: [{deps}]",
+              pageData.Name, modId, pageData.DepIds.Count,
+              string.Join(", ", pageData.DepIds));
 
           foreach (string depId in pageData.DepIds)
           {
@@ -203,6 +211,8 @@ namespace ReforgerServerApp
       foreach (string id in workingSet.Keys)
         Visit(id);
 
+      Log.Information("ModDependencyManager - Resolution complete. {added} dep(s) auto-added, {warn} warning(s).",
+          added.Count, warnings.Count);
       progress?.Invoke(workingSet.Count, workingSet.Count);
       return (sorted, added, warnings);
     }
