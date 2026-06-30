@@ -20,6 +20,7 @@ using Serilog;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 
 namespace ReforgerServerApp.Managers
@@ -733,17 +734,22 @@ namespace ReforgerServerApp.Managers
 
     public bool IsRotationEnabled => m_rotationCts != null && !m_rotationCts.IsCancellationRequested;
 
-    public void ConfigureRotationTask(List<ScenarioRotationEntry> entries)
+    public void ConfigureRotationTask(ScenarioRotationConfig config)
     {
-      if (entries == null || entries.Count == 0) return;
+      if (config == null || !config.Enabled || config.Entries.Count == 0)
+      {
+        CancelRotationTask();
+        return;
+      }
+
       m_rotationCts?.Cancel();
       m_rotationCts?.Dispose();
-      m_rotationEntries = new List<ScenarioRotationEntry>(entries);
+      m_rotationEntries = new List<ScenarioRotationEntry>(config.Entries);
       m_rotationIndex = 0;
       m_rotationCts = new CancellationTokenSource();
-      _ = RunRotationAsync(m_rotationCts.Token);
-      Log.Information("ProcessManager - Scenario rotation configured with {count} scenario(s).", entries.Count);
-      OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: Scenario rotation active — {entries.Count} scenario(s) in queue.{Environment.NewLine}"));
+      _ = RunRotationAsync(config, m_rotationCts.Token);
+      Log.Information("ProcessManager - Scenario rotation configured with {count} scenario(s), mode={mode}.", config.Entries.Count, config.Mode);
+      OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: Scenario rotation active — {config.Entries.Count} scenario(s) in queue ({config.Mode}).{Environment.NewLine}"));
     }
 
     public void CancelRotationTask()
@@ -761,13 +767,18 @@ namespace ReforgerServerApp.Managers
       ScenarioRotationSwitchEvent?.Invoke(this, e);
     }
 
-    private async Task RunRotationAsync(CancellationToken ct)
+    private async Task RunRotationAsync(ScenarioRotationConfig config, CancellationToken ct)
     {
       while (!ct.IsCancellationRequested && m_rotationEntries != null && m_rotationEntries.Count > 0)
       {
         ScenarioRotationEntry current = m_rotationEntries[m_rotationIndex];
-        TimeSpan interval = TimeSpan.FromHours(current.DurationHours);
-        TimeSpan warningLeadTime = TimeSpan.FromMinutes(10);
+        TimeSpan interval = TimeSpan.FromMinutes(current.DurationMin);
+
+        // Calculate max lead time from warnings config
+        int maxLeadMin = config.Warnings.Enabled && config.Warnings.LeadTimesMin.Count > 0
+          ? config.Warnings.LeadTimesMin.Max()
+          : 10;
+        TimeSpan warningLeadTime = TimeSpan.FromMinutes(maxLeadMin);
         TimeSpan initialWait = interval > warningLeadTime ? interval - warningLeadTime : TimeSpan.Zero;
 
         if (initialWait > TimeSpan.Zero)
@@ -775,25 +786,57 @@ namespace ReforgerServerApp.Managers
 
         if (ct.IsCancellationRequested) return;
 
-        // Advance to the next scenario
-        m_rotationIndex = (m_rotationIndex + 1) % m_rotationEntries.Count;
+        // Determine next scenario (sequential or shuffle)
+        if (config.Mode == "shuffle")
+        {
+          Random rnd = new();
+          m_rotationIndex = rnd.Next(0, m_rotationEntries.Count);
+        }
+        else
+        {
+          m_rotationIndex = (m_rotationIndex + 1) % m_rotationEntries.Count;
+        }
+
         ScenarioRotationEntry next = m_rotationEntries[m_rotationIndex];
 
-        foreach (var (message, waitAfter) in s_restartWarnings)
+        // Send player warnings if enabled
+        if (config.Warnings.Enabled && config.Warnings.LeadTimesMin.Count > 0)
         {
-          if (ct.IsCancellationRequested) return;
-          string fullMsg = $"{message} Next scenario: {next.ScenarioName}";
-          await RconManager.GetInstance().SendBroadcastAsync(fullMsg);
-          OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Rotation] {fullMsg}{Environment.NewLine}"));
-          Log.Information("ProcessManager - Rotation warning: {msg}", fullMsg);
-          await Task.Delay(waitAfter, ct).ConfigureAwait(false);
+          var sortedLeadTimes = config.Warnings.LeadTimesMin.OrderByDescending(x => x).ToList();
+          TimeSpan lastWait = TimeSpan.Zero;
+
+          foreach (int leadMin in sortedLeadTimes)
+          {
+            if (ct.IsCancellationRequested) return;
+
+            TimeSpan timeUntilWarning = warningLeadTime - TimeSpan.FromMinutes(leadMin);
+            TimeSpan waitDuration = timeUntilWarning - lastWait;
+
+            if (waitDuration > TimeSpan.Zero)
+              await Task.Delay(waitDuration, ct).ConfigureAwait(false);
+
+            if (ct.IsCancellationRequested) return;
+
+            // Substitute tokens in template: {next}, {minutes}, {players}
+            string message = config.Warnings.Template
+              .Replace("{next}", next.Label)
+              .Replace("{minutes}", leadMin.ToString())
+              .Replace("{players}", "0"); // TODO: get actual player count from server status
+
+            await RconManager.GetInstance().SendBroadcastAsync(message);
+            OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Rotation] {message}{Environment.NewLine}"));
+            Log.Information("ProcessManager - Rotation warning: {msg}", message);
+
+            lastWait = timeUntilWarning;
+          }
         }
 
         if (ct.IsCancellationRequested) return;
 
-        await RconManager.GetInstance().SendBroadcastAsync($"Switching to scenario: {next.ScenarioName}. Server restarting now!");
-        OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Rotation] Switching to: {next.ScenarioName} ({next.ScenarioPath}){Environment.NewLine}"));
-        Log.Information("ProcessManager - Rotation switching to: {name}", next.ScenarioName);
+        string switchMsg = $"Switching to scenario: {next.Label}. Server restarting now!";
+        await RconManager.GetInstance().SendBroadcastAsync(switchMsg);
+        OnUpdateSteamCmdLogEvent(new($"{Utilities.GetTimestamp()}: [Rotation] Switching to: {next.Label}{Environment.NewLine}"));
+        Log.Information("ProcessManager - Rotation switching to: {name}", next.Label);
 
         // Notify UI to update the displayed scenario
         OnScenarioRotationSwitchEvent(new(next));
