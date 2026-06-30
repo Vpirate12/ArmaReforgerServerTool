@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel Desktop — Scenario Rotation (design reference)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#0b0f14;font-family:'Inter',sans-serif}
+  *{box-sizing:border-box}
+  .wrap{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px 24px}
+  .win{width:1380px;max-width:100%;background:#0a0e13;border:1px solid #25323f;border-radius:12px;box-shadow:0 30px 90px -40px rgba(0,0,0,.9);overflow:hidden}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="win">
+    <!-- title bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;height:42px;background:#070b10;border-bottom:1px solid #1c2632;padding-left:16px">
+      <div style="display:flex;align-items:center;gap:11px">
+        <div style="display:flex;align-items:flex-end;gap:2.5px;height:16px"><span style="width:3.5px;height:7px;background:#38bdf8;border-radius:1px"></span><span style="width:3.5px;height:11px;background:#38bdf8;border-radius:1px"></span><span style="width:3.5px;height:16px;background:#38bdf8;border-radius:1px"></span></div>
+        <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;color:#e7edf3">Sentinel Desktop</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b6877;letter-spacing:.5px;border-left:1px solid #25323f;padding-left:11px">AN STG PRODUCT</span>
+      </div>
+      <div style="display:flex">
+        <div style="width:46px;height:42px;display:flex;align-items:center;justify-content:center"><div style="width:11px;height:1px;background:#5b6877"></div></div>
+        <div style="width:46px;height:42px;display:flex;align-items:center;justify-content:center"><div style="width:9px;height:9px;border:1px solid #5b6877"></div></div>
+        <div style="width:46px;height:42px;display:flex;align-items:center;justify-content:center;color:#5b6877;font-size:14px">✕</div>
+      </div>
+    </div>
+    <!-- context bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;background:#0a0e13;border-bottom:1px solid #1c2632;padding:14px 24px">
+      <div style="display:flex;align-items:center;gap:13px"><span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:18px;color:#e7edf3">STG | Everon Conflict</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5b6877;border-left:1px solid #25323f;padding-left:13px">ADVANCED</span></div>
+      <div style="display:flex;gap:22px;align-items:center"><span style="color:#8a97a6;font-size:14px">Configuration</span><span style="color:#8a97a6;font-size:14px">Mods</span><span style="color:#e7edf3;font-weight:600;font-size:14px;border-bottom:2px solid #38bdf8;padding-bottom:3px">Advanced</span><span style="color:#8a97a6;font-size:14px">Status</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#38bdf8;border-left:1px solid #25323f;padding-left:18px">↗ Open in Sitrep</span></div>
+    </div>
+    <!-- section header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;background:#0b1219;border-bottom:1px solid #1c2632;padding:15px 24px">
+      <div style="display:flex;align-items:center;gap:11px"><span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:18px;color:#e7edf3">Scenario Rotation</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#06121c;background:#38bdf8;border-radius:20px;padding:3px 9px;font-weight:700">NEW · 1B.1</span></div>
+      <div style="display:flex;align-items:center;gap:11px"><span style="font-size:13px;color:#8a97a6">Rotation enabled</span><span style="width:40px;height:22px;border-radius:11px;background:#0ea5e9;position:relative;display:inline-block"><span style="position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff"></span></span></div>
+    </div>
+    <!-- body -->
+    <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:18px;padding:22px 24px;background:#0a0e13">
+      <!-- LEFT: playlist -->
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="background:#0e151d;border:1px solid #25323f;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid #1c2632">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b6877;letter-spacing:1px">ROTATION PLAYLIST · 4</div>
+            <div style="display:flex;align-items:center;gap:9px">
+              <div style="display:flex;background:#070b10;border:1px solid #25323f;border-radius:8px;overflow:hidden"><span style="font-size:12px;font-weight:600;color:#06121c;background:#38bdf8;padding:6px 13px">Sequential</span><span style="font-size:12px;color:#8a97a6;padding:6px 13px;border-left:1px solid #25323f">Shuffle</span></div>
+            </div>
+          </div>
+          <div style="padding:6px 0">
+            <div style="display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid #161f29">
+              <span style="color:#3a4756;font-size:15px;cursor:grab">⠿</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5b6877;min-width:16px">1</span>
+              <div style="flex:1"><div style="font-size:14px;color:#e7edf3;font-weight:500">Conflict — Everon</div><div style="font-size:12px;color:#5b6877;font-family:'JetBrains Mono',monospace">PvP · 64p</div></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#34d399;background:rgba(52,211,153,.12);border-radius:5px;padding:4px 8px">~61 fps</span>
+              <div style="display:flex;align-items:center;gap:6px;background:#070b10;border:1px solid #25323f;border-radius:7px;padding:6px 11px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e7edf3">90</span><span style="font-size:11px;color:#5b6877">min</span></div>
+              <span style="color:#5b6877;font-size:14px">✕</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid #161f29">
+              <span style="color:#3a4756;font-size:15px;cursor:grab">⠿</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5b6877;min-width:16px">2</span>
+              <div style="flex:1"><div style="font-size:14px;color:#e7edf3;font-weight:500">Conflict — Arland</div><div style="font-size:12px;color:#5b6877;font-family:'JetBrains Mono',monospace">PvP · 48p</div></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#34d399;background:rgba(52,211,153,.12);border-radius:5px;padding:4px 8px">~64 fps</span>
+              <div style="display:flex;align-items:center;gap:6px;background:#070b10;border:1px solid #25323f;border-radius:7px;padding:6px 11px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e7edf3">60</span><span style="font-size:11px;color:#5b6877">min</span></div>
+              <span style="color:#5b6877;font-size:14px">✕</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid #161f29">
+              <span style="color:#3a4756;font-size:15px;cursor:grab">⠿</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5b6877;min-width:16px">3</span>
+              <div style="flex:1"><div style="font-size:14px;color:#e7edf3;font-weight:500">Combat Ops — Everon</div><div style="font-size:12px;color:#5b6877;font-family:'JetBrains Mono',monospace">PvE · 32p</div></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#fbbf24;background:rgba(251,191,36,.12);border-radius:5px;padding:4px 8px">~57 fps</span>
+              <div style="display:flex;align-items:center;gap:6px;background:#070b10;border:1px solid #25323f;border-radius:7px;padding:6px 11px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e7edf3">120</span><span style="font-size:11px;color:#5b6877">min</span></div>
+              <span style="color:#5b6877;font-size:14px">✕</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;padding:13px 18px">
+              <span style="color:#3a4756;font-size:15px;cursor:grab">⠿</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5b6877;min-width:16px">4</span>
+              <div style="flex:1"><div style="font-size:14px;color:#e7edf3;font-weight:500">Game Master — Everon</div><div style="font-size:12px;color:#5b6877;font-family:'JetBrains Mono',monospace">Zeus · 24p</div></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#34d399;background:rgba(52,211,153,.12);border-radius:5px;padding:4px 8px">~66 fps</span>
+              <div style="display:flex;align-items:center;gap:6px;background:#070b10;border:1px solid #25323f;border-radius:7px;padding:6px 11px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e7edf3">90</span><span style="font-size:11px;color:#5b6877">min</span></div>
+              <span style="color:#5b6877;font-size:14px">✕</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-top:1px solid #1c2632;background:#0b1219">
+            <span style="border:1px solid #2f5e78;color:#38bdf8;border-radius:8px;padding:8px 15px;font-size:13px;font-weight:600">+ Add scenario</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8a97a6">full cycle · <span style="color:#e7edf3">6h 0m</span></span>
+          </div>
+        </div>
+        <div style="background:#0e151d;border:1px solid #25323f;border-radius:14px;padding:16px 20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b6877;letter-spacing:1px">NEXT 6 HOURS</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b6877">↻ restart after cycle</span></div>
+          <div style="display:flex;height:30px;border-radius:7px;overflow:hidden;gap:2px">
+            <div style="flex:90;background:#0ea5e9;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#fff;font-weight:600">Everon</span></div>
+            <div style="flex:60;background:#0284c7;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#fff;font-weight:600">Arland</span></div>
+            <div style="flex:120;background:#0369a1;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#dbeafe;font-weight:600">Combat Ops</span></div>
+            <div style="flex:90;background:#075985;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#dbeafe;font-weight:600">Game Master</span></div>
+            <div style="flex:4;background:#f87171"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:7px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b6877"><span>now</span><span>+1.5h</span><span>+2.5h</span><span>+4.5h</span><span>+6h ↻</span></div>
+        </div>
+      </div>
+      <!-- RIGHT: timing & warnings -->
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="background:#0e151d;border:1px solid #25323f;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid #1c2632"><div style="display:flex;align-items:center;gap:9px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b6877;letter-spacing:1px">PLAYER WARNINGS</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#38bdf8;border:1px solid #2f5e78;border-radius:4px;padding:2px 6px">RCON</span></div><span style="width:36px;height:20px;border-radius:10px;background:#0ea5e9;position:relative;display:inline-block"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span></div>
+          <div style="padding:15px 18px">
+            <div style="font-size:13px;color:#8a97a6;margin-bottom:10px">Broadcast before the map changes:</div>
+            <div style="display:flex;gap:8px;margin-bottom:14px"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#06121c;background:#38bdf8;border-radius:7px;padding:6px 12px">15 min</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#06121c;background:#38bdf8;border-radius:7px;padding:6px 12px">5 min</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#06121c;background:#38bdf8;border-radius:7px;padding:6px 12px">1 min</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8a97a6;border:1px dashed #25323f;border-radius:7px;padding:6px 11px">+</span></div>
+            <div style="font-size:12px;color:#5b6877;margin-bottom:6px">Message template</div>
+            <div style="background:#070b10;border:1px solid #25323f;border-radius:8px;padding:11px 13px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#cdd7e1;line-height:1.5">Map changes to <span style="color:#38bdf8">{next}</span> in <span style="color:#38bdf8">{minutes}</span> min</div>
+            <div style="display:flex;gap:6px;margin-top:9px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8a97a6;background:#0b1219;border:1px solid #25323f;border-radius:5px;padding:3px 8px">{next}</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8a97a6;background:#0b1219;border:1px solid #25323f;border-radius:5px;padding:3px 8px">{minutes}</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8a97a6;background:#0b1219;border:1px solid #25323f;border-radius:5px;padding:3px 8px">{players}</span></div>
+          </div>
+        </div>
+        <div style="background:#0e151d;border:1px solid #25323f;border-radius:14px;padding:15px 18px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b6877;letter-spacing:1px;margin-bottom:13px">RESTART POLICY</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 0"><span style="width:16px;height:16px;border-radius:50%;border:5px solid #0ea5e9;background:#070b10"></span><span style="font-size:13px;color:#e7edf3">After full rotation cycle</span></div>
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 0"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #3a4756"></span><span style="font-size:13px;color:#8a97a6">Every</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#cdd7e1;background:#070b10;border:1px solid #25323f;border-radius:6px;padding:4px 10px">6h</span></div>
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 0"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #3a4756"></span><span style="font-size:13px;color:#8a97a6">Daily at</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#cdd7e1;background:#070b10;border:1px solid #25323f;border-radius:6px;padding:4px 10px">03:00</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:13px;border-top:1px solid #161f29"><span style="font-size:13px;color:#cdd7e1">Empty-server restart</span><span style="width:36px;height:20px;border-radius:10px;background:#25323f;position:relative;display:inline-block"><span style="position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#8a97a6"></span></span></div>
+        </div>
+        <span style="background:#0ea5e9;color:#fff;border-radius:10px;padding:13px;text-align:center;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;display:block">Save rotation</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
