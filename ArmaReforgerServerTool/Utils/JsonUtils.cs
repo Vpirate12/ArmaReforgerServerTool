@@ -549,10 +549,7 @@ namespace ReforgerServerApp.Utils
                 props.advancedSettings = advancedSettings;
                 break;
               case "scenarioRotation":
-                props.scenarioRotation = JsonSerializer.Deserialize<List<ScenarioRotationEntry>>(ref reader, options) ?? new();
-                break;
-              case "scenarioRotationEnabled":
-                props.scenarioRotationEnabled = reader.GetBoolean();
+                props.scenarioRotation = JsonSerializer.Deserialize<ScenarioRotationConfig>(ref reader, options) ?? new();
                 break;
               default:
                 reader.Skip(); // forward-compatible: ignore unknown fields
@@ -572,7 +569,6 @@ namespace ReforgerServerApp.Utils
         List<AdvancedSetting> advSettingsList = value.advancedSettings.Values.ToList();
         JsonSerializer.Serialize(writer, advSettingsList, options);
 
-        writer.WriteBoolean("scenarioRotationEnabled", value.scenarioRotationEnabled);
         writer.WritePropertyName("scenarioRotation");
         JsonSerializer.Serialize(writer, value.scenarioRotation, options);
 

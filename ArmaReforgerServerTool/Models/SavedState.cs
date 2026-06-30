@@ -53,15 +53,13 @@ namespace Longbow.Models
 
     public Dictionary<string, AdvancedSetting> advancedSettings { get; set; }
     public string serverLocation { get; set; }
-    public List<ScenarioRotationEntry> scenarioRotation { get; set; }
-    public bool scenarioRotationEnabled { get; set; }
+    public ScenarioRotationConfig scenarioRotation { get; set; }
 
     public SavedState(Dictionary<string, AdvancedSetting> advancedSettings, string serverLocation)
     {
       this.advancedSettings = advancedSettings;
       this.serverLocation = serverLocation;
-      this.scenarioRotation = new List<ScenarioRotationEntry>();
-      this.scenarioRotationEnabled = false;
+      this.scenarioRotation = new ScenarioRotationConfig();
     }
 
     public static SavedState Default => new(GetDefaultAdvancedSettings(), string.Empty);
