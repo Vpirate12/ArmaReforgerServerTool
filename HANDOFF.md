@@ -1,9 +1,10 @@
 # Handoff: ArmaReforgerServerTool Session 2026-06-29
 
-**Status:** Phase 1A shipped + Phase 1B (Flask webapp) in progress  
+**Status:** Phase 1A polished ✅ + Phase 1B (Flask webapp) in progress 🚧  
 **Branch:** `feature/scenario-manager`  
-**Latest Commit:** 8c16bc7 ([WIP] Add scenario-manager Flask webapp)  
-**Last Updated:** 2026-06-29
+**Latest Commit:** 1980a9a (Phase 1A polish: Mod validation, Sitrep UI theming, config services)  
+**Last Updated:** 2026-06-29  
+**GitHub Fork:** https://github.com/Vpirate12/ArmaReforgerServerTool
 
 ---
 
