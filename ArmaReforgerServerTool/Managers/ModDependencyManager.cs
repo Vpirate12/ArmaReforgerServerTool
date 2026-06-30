@@ -23,7 +23,8 @@ namespace ReforgerServerApp
     private record ModPageData(
         string Name,
         List<string> DepIds,
-        Dictionary<string, string> DepIdToName);  // depId → dep display name (from same JSON)
+        Dictionary<string, string> DepIdToName,   // depId → dep display name (from same JSON)
+        long SizeBytes);                           // currentVersionSize in bytes (0 if unavailable)
 
     /// <summary>
     /// Loads the workshop page for <paramref name="modId"/> and parses the
@@ -40,12 +41,13 @@ namespace ReforgerServerApp
       if (scriptNode == null)
       {
         Log.Warning("ModDependencyManager - No __NEXT_DATA__ found on page for {id}", modId);
-        return new ModPageData(modId, new List<string>(), new Dictionary<string, string>());
+        return new ModPageData(modId, new List<string>(), new Dictionary<string, string>(), 0);
       }
 
       string name = modId;
       List<string> depIds = new();
       Dictionary<string, string> depNames = new(StringComparer.OrdinalIgnoreCase);
+      long sizeBytes = 0;
 
       try
       {
@@ -57,6 +59,9 @@ namespace ReforgerServerApp
 
         if (asset.TryGetProperty("name", out JsonElement nameEl))
           name = nameEl.GetString() ?? modId;
+
+        if (asset.TryGetProperty("currentVersionSize", out JsonElement sizeEl))
+          sizeBytes = sizeEl.GetInt64();
 
         if (asset.TryGetProperty("dependencies", out JsonElement depsEl))
         {
@@ -81,7 +86,7 @@ namespace ReforgerServerApp
             modId, ex.Message);
       }
 
-      return new ModPageData(name, depIds, depNames);
+      return new ModPageData(name, depIds, depNames, sizeBytes);
     }
 
     /// <summary>
@@ -102,15 +107,16 @@ namespace ReforgerServerApp
     /// page is fetched so the caller can update a progress bar.
     /// </param>
     /// <returns>
-    /// A tuple of (sorted list, auto-added mods, warning strings).
+    /// A tuple of (sorted list, auto-added mods, warning strings, total size in bytes).
     /// On fatal network failure the original order is returned unchanged with a warning.
     /// </returns>
-    public static (List<Mod> sorted, List<Mod> added, List<string> warnings) ResolveDependencies(
+    public static (List<Mod> sorted, List<Mod> added, List<string> warnings, long totalSizeBytes) ResolveDependencies(
         IList<Mod> enabled,
         Action<int, int>? progress = null)
     {
       List<Mod> added = new();
       List<string> warnings = new();
+      long totalSize = 0;
 
       Log.Information("ModDependencyManager - Starting resolution for {count} enabled mods", enabled.Count);
 
@@ -153,6 +159,7 @@ namespace ReforgerServerApp
           }
 
           graph[modId] = pageData.DepIds;
+          totalSize += pageData.SizeBytes;
 
           Log.Information("ModDependencyManager - {name} ({id}): {count} dep(s) declared: [{deps}]",
               pageData.Name, modId, pageData.DepIds.Count,
@@ -182,7 +189,7 @@ namespace ReforgerServerApp
         Log.Error("ModDependencyManager - Unexpected error during resolution: {msg}", ex.Message);
         warnings.Add($"Dependency resolution failed: {ex.Message}. Original mod order preserved.");
         progress?.Invoke(workingSet.Count, workingSet.Count);
-        return (new List<Mod>(enabled), added, warnings);
+        return (new List<Mod>(enabled), added, warnings, 0);
       }
 
       // Topological sort (recursive DFS)
@@ -211,10 +218,10 @@ namespace ReforgerServerApp
       foreach (string id in workingSet.Keys)
         Visit(id);
 
-      Log.Information("ModDependencyManager - Resolution complete. {added} dep(s) auto-added, {warn} warning(s).",
-          added.Count, warnings.Count);
+      Log.Information("ModDependencyManager - Resolution complete. {added} dep(s) auto-added, {warn} warning(s). Total size: {size} bytes.",
+          added.Count, warnings.Count, totalSize);
       progress?.Invoke(workingSet.Count, workingSet.Count);
-      return (sorted, added, warnings);
+      return (sorted, added, warnings, totalSize);
     }
   }
 }

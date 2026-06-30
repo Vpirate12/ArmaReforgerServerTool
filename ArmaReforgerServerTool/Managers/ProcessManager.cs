@@ -179,6 +179,30 @@ namespace ReforgerServerApp.Managers
           return;
         }
 
+        // Check validation before launch
+        var configMgr = ConfigurationManager.GetInstance();
+        var validationResult = configMgr.GetLastValidationResult();
+
+        Log.Information("[DEBUG] ProcessManager.StartStopServer: Validation check - Result: {result}, HasFatalErrors: {hasFatal}",
+          validationResult == null ? "NULL" : $"Valid={validationResult.IsValid}, Errors={validationResult.Errors.Count}",
+          validationResult?.HasFatalErrors());
+
+        if (validationResult?.HasFatalErrors() == true)
+        {
+          Log.Error("[DEBUG] ProcessManager.StartStopServer: BLOCKING LAUNCH - Fatal validation errors detected!");
+          ValidationLogger.LogLaunchBlocked(validationResult);
+          return;
+        }
+
+        if (validationResult?.Warnings.Any() == true)
+        {
+          Log.Warning("[DEBUG] ProcessManager.StartStopServer: Allowing launch with warnings");
+          ValidationLogger.LogLaunchWithWarnings(validationResult);
+        }
+
+        Log.Information("[DEBUG] ProcessManager.StartStopServer: Proceeding with server launch");
+
+        Log.Information("Starting Arma Reforger server...");
         Log.Information("ProcessManager - User started server.");
         m_isServerStarted = true;
 

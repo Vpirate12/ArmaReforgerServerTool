@@ -6,6 +6,7 @@
  * Author:       Bradley Newman
  ******************************************************************************/
 
+using FontAwesome.Sharp;
 using Longbow.Forms;
 using Longbow.Managers;
 using Longbow.Models;
@@ -17,6 +18,7 @@ using ReforgerServerApp.Utils;
 using Serilog;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace ReforgerServerApp
 {
@@ -32,8 +34,13 @@ namespace ReforgerServerApp
     // Mod dependency validation
     private bool m_modsValidated = false;
     private Button? m_checkModsBtn;
+    private Button? m_loadConfigBtn;
+    private Button? m_saveConfigBtn;
     private Label? m_checkModsStatusLabel;
     private ProgressBar? m_checkModsProgressBar;
+    private CheckBox? m_appendSizeChk;
+    private long m_lastTotalModSizeBytes;
+    private ServerParameterString? m_serverNameCtrl;
 
     // Scenario Rotation UI controls
     private CheckBox m_rotationEnabledCheckBox;
@@ -48,6 +55,8 @@ namespace ReforgerServerApp
     {
       InitializeComponent();
 
+      ApplyUIThemeAndStyling();
+
       CreateServerParameterControls();
       CreateAdvancedServerParameterControls();
 
@@ -58,6 +67,7 @@ namespace ReforgerServerApp
       ProcessManager.GetInstance().UpdateServerStatusEvent += HandleServerStatusEvent;
       ConfigurationManager.GetInstance().UpdateScenarioIdFromLoadedConfigEvent += HandleUpdateScenarioIdFromLoadedConfigEvent;
       ProcessManager.GetInstance().ScenarioRotationSwitchEvent += HandleScenarioRotationSwitchEvent;
+      ConfigurationManager.GetInstance().ValidationStateChanged += HandleValidationStateChanged;
 
       useUpnp.Checked = SavedStateManager.GetInstance().GetLoadedAdvancedSettings().GetValueOrDefault("useUpnp", SavedState.DEFAULT_USE_UPNP).Enabled;
       NetworkManager.GetInstance().useUPnP = useUpnp.Checked;
@@ -146,6 +156,147 @@ namespace ReforgerServerApp
       CreateRotationTab();
       CreateModValidationControls();
       ConfigurationManager.GetInstance().GetEnabledMods().ListChanged += OnEnabledModsChanged;
+    }
+
+    /// <summary>
+    /// Apply Sitrep brand color scheme and styling to all UI elements
+    /// </summary>
+    private void ApplyUIThemeAndStyling()
+    {
+      // Style the main form
+      UIStyleHelper.StyleMainForm(this);
+
+      // Style primary action buttons (server management)
+      StyleIconButtonDark(startServerBtn, true);
+      StyleIconButtonDark(downloadSteamCmdBtn, false);
+      StyleIconButtonDark(locateServerFilesBtn, false);
+      StyleIconButtonDark(deleteServerFilesBtn, false);
+
+      // Style config load/save buttons
+      StyleIconButtonDark(loadSettingsBtn, false);
+      StyleIconButtonDark(saveSettingsBtn, false);
+
+      // Style scenario and mission buttons
+      StyleIconButtonDark(scenarioSelectBtn, false);
+      StyleIconButtonDark(editMissionHeaderBtn, false);
+      StyleIconButtonDark(loadSaveGameBtn, false);
+
+      // Style mod management buttons
+      StyleIconButtonDark(addModBtn, false);
+      StyleIconButtonDark(editModBtn, false);
+      StyleIconButtonDark(removeModBtn, false);
+      StyleIconButtonDark(enableAllModsBtn, false);
+      StyleIconButtonDark(disableAllModsBtn, false);
+      StyleIconButtonDark(addToEnabledBtn, false);
+      StyleIconButtonDark(removeFromEnabledBtn, false);
+      StyleIconButtonDark(moveModPosUpBtn, false);
+      StyleIconButtonDark(moveModPosDownBtn, false);
+      StyleIconButtonDark(exportModsBtn, false);
+      StyleIconButtonDark(importModsBtn, false);
+
+      // Style utility buttons
+      StyleIconButtonDark(clearLogBtn, false);
+      StyleIconButtonDark(aboutBtn, false);
+
+      // Style GroupBoxes for dark theme
+      UIStyleHelper.StyleGroupBox(groupBox1);
+      UIStyleHelper.StyleGroupBox(groupBox2);
+      UIStyleHelper.StyleGroupBox(groupBox3);
+      UIStyleHelper.StyleGroupBox(groupBox4);
+      UIStyleHelper.StyleGroupBox(groupBox5);
+      UIStyleHelper.StyleGroupBox(groupBox6);
+      UIStyleHelper.StyleGroupBox(groupBox7);
+      UIStyleHelper.StyleGroupBox(serverInfoGroupBox);
+
+      // Style checkboxes
+      UIStyleHelper.StyleCheckBox(useUpnp);
+      UIStyleHelper.StyleCheckBox(useExperimentalCheckBox);
+      UIStyleHelper.StyleCheckBox(keepServerUpdated);
+
+      // Style text inputs
+      UIStyleHelper.StyleTextBox(modsSearchTB);
+      UIStyleHelper.StyleTextBox(steamCmdLog);
+      UIStyleHelper.StyleComboBox(logLevelComboBox);
+
+      // Style labels
+      UIStyleHelper.StyleLabel(label15, false, false);
+      UIStyleHelper.StyleLabel(label16, false, false);
+      UIStyleHelper.StyleLabel(label30, false, false);
+      UIStyleHelper.StyleLabel(serverRunningLabel, true, false);
+      UIStyleHelper.StyleLabel(steamCmdAlert, false, true);
+      UIStyleHelper.StyleLabel(loadedScenarioLabel, false, false);
+
+      // Style tab control and pages
+      if (tabControl1 != null)
+      {
+        tabControl1.BackColor = UIColors.DarkBackground;
+        tabControl1.ForeColor = UIColors.TextLight;
+        foreach (TabPage page in tabControl1.TabPages)
+        {
+          page.BackColor = UIColors.DarkBackground;
+          page.ForeColor = UIColors.TextLight;
+        }
+      }
+
+      // Style the advanced parameters panel
+      if (advancedParametersPanel != null)
+      {
+        advancedParametersPanel.BackColor = UIColors.DarkBackground;
+        advancedParametersPanel.ForeColor = UIColors.TextLight;
+      }
+
+      // Style server parameters panel
+      if (serverParameters != null)
+      {
+        serverParameters.BackColor = UIColors.DarkBackground;
+        serverParameters.ForeColor = UIColors.TextLight;
+      }
+
+      // Style list boxes
+      if (availableMods != null)
+      {
+        availableMods.BackColor = UIColors.LightBackground;
+        availableMods.ForeColor = UIColors.TextLight;
+      }
+
+      if (enabledMods != null)
+      {
+        enabledMods.BackColor = UIColors.LightBackground;
+        enabledMods.ForeColor = UIColors.TextLight;
+      }
+
+      // Style status labels
+      for (int i = 0; i < this.Controls.Count; i++)
+      {
+        if (this.Controls[i] is Label lbl)
+        {
+          UIStyleHelper.StyleLabel(lbl, false, false);
+        }
+      }
+    }
+
+    /// <summary>
+    /// Helper to style icon buttons for dark theme
+    /// </summary>
+    private void StyleIconButtonDark(FontAwesome.Sharp.IconButton button, bool isPrimary)
+    {
+      button.BackColor = isPrimary ? UIColors.Primary : UIColors.LightBackground;
+      button.ForeColor = UIColors.TextLight;
+      button.IconColor = UIColors.TextLight;
+      button.FlatStyle = FlatStyle.Flat;
+      button.FlatAppearance.BorderColor = isPrimary ? UIColors.PrimaryDark : UIColors.ButtonBorder;
+      button.FlatAppearance.BorderSize = 1;
+      if (isPrimary)
+      {
+        button.FlatAppearance.MouseOverBackColor = UIColors.PrimaryDark;
+        button.FlatAppearance.MouseDownBackColor = UIColors.Primary;
+      }
+      else
+      {
+        button.FlatAppearance.MouseOverBackColor = UIColors.Primary;
+        button.FlatAppearance.MouseDownBackColor = UIColors.PrimaryDark;
+      }
+      button.Cursor = Cursors.Hand;
     }
 
     /// <summary>
@@ -701,6 +852,7 @@ namespace ReforgerServerApp
         ParameterFriendlyName = "Server Name",
         ParameterTooltip = Constants.SERVER_PARAM_NAME_TOOLTIP_STR
       };
+      m_serverNameCtrl = serverName;
       serverParameters.Controls.Add(serverName);
       ServerParameterString serverPassword = new()
       {
@@ -1634,6 +1786,30 @@ namespace ReforgerServerApp
     }
 
     /// <summary>
+    /// Event Handler for the 'ValidationStateChanged' event
+    /// Called whenever mod validation state changes
+    /// </summary>
+    private void HandleValidationStateChanged(object sender, ValidationResult result)
+    {
+      Log.Information("[DEBUG] HandleValidationStateChanged fired! Result: IsValid={isValid}, HasFatalErrors={hasFatal}, Errors={errors}, Warnings={warnings}",
+        result?.IsValid,
+        result?.HasFatalErrors(),
+        result?.Errors?.Count,
+        result?.Warnings?.Count);
+
+      if (startServerBtn.InvokeRequired)
+      {
+        Log.Information("[DEBUG] HandleValidationStateChanged: InvokeRequired=true, marshalling to UI thread");
+        startServerBtn.Invoke(new Action(() => HandleValidationStateChanged(sender, result)));
+      }
+      else
+      {
+        Log.Information("[DEBUG] HandleValidationStateChanged: Calling UpdateStartButtonState()");
+        UpdateStartButtonState();
+      }
+    }
+
+    /// <summary>
     /// Create a string with all requried launch arguments
     /// </summary>
     /// <returns>String containing launch arguments for the Reforger Server</returns>
@@ -1909,12 +2085,33 @@ namespace ReforgerServerApp
         Size = new Size(100, stripHeight),
         Anchor = AnchorStyles.Bottom | AnchorStyles.Left
       };
+      UIStyleHelper.StylePrimaryButton(m_checkModsBtn);
       m_checkModsBtn.Click += StartModValidationClicked;
+
+      m_loadConfigBtn = new Button
+      {
+        Text = "Load Config",
+        Location = new Point(x + 106, stripY),
+        Size = new Size(100, stripHeight),
+        Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+      };
+      UIStyleHelper.StyleSecondaryButton(m_loadConfigBtn);
+      m_loadConfigBtn.Click += LoadConfigBtnClicked;
+
+      m_saveConfigBtn = new Button
+      {
+        Text = "Save Config",
+        Location = new Point(x + 212, stripY),
+        Size = new Size(100, stripHeight),
+        Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+      };
+      UIStyleHelper.StyleSecondaryButton(m_saveConfigBtn);
+      m_saveConfigBtn.Click += SaveConfigBtnClicked;
 
       m_checkModsProgressBar = new ProgressBar
       {
-        Location = new Point(x + 106, stripY),
-        Size = new Size(rightEdge - x - 106, stripHeight),
+        Location = new Point(x + 318, stripY),
+        Size = new Size(rightEdge - x - 318, stripHeight),
         Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
         Minimum = 0,
         Maximum = 100,
@@ -1922,19 +2119,34 @@ namespace ReforgerServerApp
         Visible = false
       };
 
+      int chkW = 174;
       m_checkModsStatusLabel = new Label
       {
         Text = "Mod check required before starting.",
-        Location = new Point(x + 106, stripY + 4),
-        Size = new Size(rightEdge - x - 106, stripHeight),
-        Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+        Location = new Point(x + 318, stripY + 4),
+        Size = new Size(rightEdge - x - 318 - chkW - 6, stripHeight),
+        Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
         AutoSize = false,
         TextAlign = ContentAlignment.MiddleLeft
       };
 
+      m_appendSizeChk = new CheckBox
+      {
+        Text = "Append to server name",
+        Location = new Point(rightEdge - chkW, stripY + 3),
+        Size = new Size(chkW, stripHeight - 2),
+        Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+        AutoSize = false,
+        Visible = false
+      };
+      m_appendSizeChk.CheckedChanged += AppendSizeChkChanged;
+
       groupBox2.Controls.Add(m_checkModsBtn);
+      groupBox2.Controls.Add(m_loadConfigBtn);
+      groupBox2.Controls.Add(m_saveConfigBtn);
       groupBox2.Controls.Add(m_checkModsProgressBar);
       groupBox2.Controls.Add(m_checkModsStatusLabel);
+      groupBox2.Controls.Add(m_appendSizeChk);
 
       UpdateStartButtonState();
     }
@@ -1952,20 +2164,20 @@ namespace ReforgerServerApp
 
       Thread t = new(() =>
       {
-        (List<Mod> sorted, List<Mod> addedMods, List<string> warnings) =
+        (List<Mod> sorted, List<Mod> addedMods, List<string> warnings, long totalSize) =
             ModDependencyManager.ResolveDependencies(snapshot, (done, total) =>
             {
               if (m_checkModsProgressBar.IsHandleCreated && total > 0)
                 m_checkModsProgressBar.Invoke(() =>
                     m_checkModsProgressBar.Value = Math.Min(100, (int)(done * 100.0 / total)));
             });
-        m_checkModsProgressBar.Invoke(() => HandleValidationComplete(sorted, addedMods, warnings));
+        m_checkModsProgressBar.Invoke(() => HandleValidationComplete(sorted, addedMods, warnings, totalSize));
       });
       t.IsBackground = true;
       t.Start();
     }
 
-    private void HandleValidationComplete(List<Mod> sorted, List<Mod> added, List<string> warnings)
+    private void HandleValidationComplete(List<Mod> sorted, List<Mod> added, List<string> warnings, long totalSizeBytes)
     {
       if (m_checkModsBtn == null || m_checkModsProgressBar == null || m_checkModsStatusLabel == null) return;
 
@@ -1985,27 +2197,320 @@ namespace ReforgerServerApp
       else
         m_checkModsStatusLabel.Text = "All mods OK.";
 
+      m_lastTotalModSizeBytes = totalSizeBytes;
+      if (m_appendSizeChk != null)
+      {
+        if (totalSizeBytes > 0)
+        {
+          m_appendSizeChk.Text = $"~{FormatModSize(totalSizeBytes)} — append to name";
+          m_appendSizeChk.Visible = true;
+          if (m_appendSizeChk.Checked)
+            ApplySizeToServerName(totalSizeBytes);
+        }
+        else
+        {
+          m_appendSizeChk.Visible = false;
+        }
+      }
+
       UpdateStartButtonState();
+    }
+
+    private async void LoadConfigBtnClicked(object? sender, EventArgs e)
+    {
+      try
+      {
+        Log.Information("Load Config button clicked");
+
+        // Get list of available configs
+        var configManager = ConfigurationManager.GetInstance();
+        var configs = await configManager.GetAvailableConfigs();
+
+        if (configs.Count == 0)
+        {
+          MessageBox.Show(
+            "No saved configurations found. Save a configuration first.",
+            "No Configurations Available",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information
+          );
+          return;
+        }
+
+        // Create a simple dialog to select config
+        using (var form = new Form())
+        {
+          form.Text = "Load Mod Configuration";
+          form.Size = new Size(400, 300);
+          form.StartPosition = FormStartPosition.CenterParent;
+          form.FormBorderStyle = FormBorderStyle.FixedDialog;
+          form.MaximizeBox = false;
+          form.MinimizeBox = false;
+
+          var listBox = new ListBox();
+          listBox.Dock = DockStyle.Fill;
+          foreach (var config in configs)
+          {
+            listBox.Items.Add(config.Name);
+          }
+
+          var btnPanel = new Panel();
+          btnPanel.Dock = DockStyle.Bottom;
+          btnPanel.Height = 40;
+          btnPanel.Padding = new Padding(5);
+
+          var btnLoad = new Button { Text = "Load", Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+          var btnCancel = new Button { Text = "Cancel", Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+          btnLoad.Width = 80;
+          btnCancel.Width = 80;
+          btnLoad.Location = new Point(btnPanel.Width - 165, 5);
+          btnCancel.Location = new Point(btnPanel.Width - 85, 5);
+
+          btnLoad.Click += async (s, e) =>
+          {
+            if (listBox.SelectedItem != null)
+            {
+              string selectedConfig = listBox.SelectedItem.ToString() ?? "";
+              bool success = await configManager.LoadConfigFromSitrep(selectedConfig);
+              if (success)
+              {
+                MessageBox.Show(
+                  $"Configuration '{selectedConfig}' loaded successfully.",
+                  "Configuration Loaded",
+                  MessageBoxButtons.OK,
+                  MessageBoxIcon.Information
+                );
+                m_modsValidated = false;
+                if (m_checkModsStatusLabel != null)
+                  m_checkModsStatusLabel.Text = "Configuration loaded. Click 'Check Mods' to validate.";
+              }
+              else
+              {
+                MessageBox.Show(
+                  $"Failed to load configuration '{selectedConfig}'.",
+                  "Load Failed",
+                  MessageBoxButtons.OK,
+                  MessageBoxIcon.Error
+                );
+              }
+              form.Close();
+            }
+          };
+
+          btnCancel.Click += (s, e) => form.Close();
+          btnPanel.Controls.Add(btnLoad);
+          btnPanel.Controls.Add(btnCancel);
+
+          form.Controls.Add(listBox);
+          form.Controls.Add(btnPanel);
+
+          form.ShowDialog(this);
+        }
+      }
+      catch (Exception ex)
+      {
+        Log.Error("Error in LoadConfigBtnClicked: {msg}", ex.Message);
+        MessageBox.Show(
+          $"Error loading configuration: {ex.Message}",
+          "Error",
+          MessageBoxButtons.OK,
+          MessageBoxIcon.Error
+        );
+      }
+    }
+
+    private async void SaveConfigBtnClicked(object? sender, EventArgs e)
+    {
+      try
+      {
+        Log.Information("Save Config button clicked");
+
+        // Prompt for config name
+        using (var form = new Form())
+        {
+          form.Text = "Save Mod Configuration";
+          form.Size = new Size(400, 150);
+          form.StartPosition = FormStartPosition.CenterParent;
+          form.FormBorderStyle = FormBorderStyle.FixedDialog;
+          form.MaximizeBox = false;
+          form.MinimizeBox = false;
+
+          var lblName = new Label { Text = "Configuration Name:", Left = 10, Top = 20, Width = 120 };
+          var tbName = new TextBox { Left = 140, Top = 20, Width = 240, Height = 25 };
+          var lblDesc = new Label { Text = "Description (optional):", Left = 10, Top = 55, Width = 120 };
+          var tbDesc = new TextBox { Left = 140, Top = 55, Width = 240, Height = 25 };
+
+          var btnSave = new Button { Text = "Save", Left = 250, Top = 100, Width = 80 };
+          var btnCancel = new Button { Text = "Cancel", Left = 340, Top = 100, Width = 80 };
+
+          btnSave.Click += async (s, e) =>
+          {
+            if (string.IsNullOrWhiteSpace(tbName.Text))
+            {
+              MessageBox.Show(
+                "Please enter a configuration name.",
+                "Name Required",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning
+              );
+              return;
+            }
+
+            var configManager = ConfigurationManager.GetInstance();
+            bool success = await configManager.SaveConfigToSitrep(tbName.Text, tbDesc.Text);
+            if (success)
+            {
+              MessageBox.Show(
+                $"Configuration '{tbName.Text}' saved successfully.",
+                "Configuration Saved",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information
+              );
+            }
+            else
+            {
+              MessageBox.Show(
+                $"Failed to save configuration '{tbName.Text}'.",
+                "Save Failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error
+              );
+            }
+            form.Close();
+          };
+
+          btnCancel.Click += (s, e) => form.Close();
+
+          form.Controls.Add(lblName);
+          form.Controls.Add(tbName);
+          form.Controls.Add(lblDesc);
+          form.Controls.Add(tbDesc);
+          form.Controls.Add(btnSave);
+          form.Controls.Add(btnCancel);
+
+          form.ShowDialog(this);
+        }
+      }
+      catch (Exception ex)
+      {
+        Log.Error("Error in SaveConfigBtnClicked: {msg}", ex.Message);
+        MessageBox.Show(
+          $"Error saving configuration: {ex.Message}",
+          "Error",
+          MessageBoxButtons.OK,
+          MessageBoxIcon.Error
+        );
+      }
     }
 
     private void OnEnabledModsChanged(object? sender, ListChangedEventArgs e)
     {
+      Log.Information("[DEBUG] OnEnabledModsChanged fired! Event: {eventType}, Index: {index}", e.ListChangedType, e.NewIndex);
       m_modsValidated = false;
       if (m_checkModsStatusLabel != null)
         m_checkModsStatusLabel.Text = "Mod list changed — re-check required.";
-      UpdateStartButtonState();
+      if (m_appendSizeChk != null)
+        m_appendSizeChk.Visible = false;
+
+      // Trigger validation when mods change
+      Log.Information("[DEBUG] OnEnabledModsChanged: Calling TriggerValidation()");
+      ConfigurationManager.GetInstance().TriggerValidation();
+      Log.Information("[DEBUG] OnEnabledModsChanged: TriggerValidation() completed");
+    }
+
+    private void AppendSizeChkChanged(object? sender, EventArgs e)
+    {
+      ApplySizeToServerName(m_appendSizeChk?.Checked == true ? m_lastTotalModSizeBytes : 0);
+    }
+
+    private void ApplySizeToServerName(long sizeBytes)
+    {
+      if (m_serverNameCtrl == null) return;
+      string current = ((string)m_serverNameCtrl.ParameterValue).TrimEnd();
+      current = Regex.Replace(current, @"\s*\|\s*~[\d.]+\s*[GM]B\s*mods",
+          string.Empty, RegexOptions.IgnoreCase).TrimEnd();
+      if (sizeBytes > 0)
+        current += $" | ~{FormatModSize(sizeBytes)} mods";
+      m_serverNameCtrl.ParameterValue = current;
+    }
+
+    private static string FormatModSize(long bytes)
+    {
+      if (bytes >= 1024L * 1024 * 1024)
+        return $"{bytes / (1024.0 * 1024 * 1024):F1} GB";
+      return $"{bytes / (1024.0 * 1024):F0} MB";
     }
 
     private void UpdateStartButtonState()
     {
+      Log.Information("[DEBUG] UpdateStartButtonState() called");
+
       if (startServerBtn.InvokeRequired)
       {
+        Log.Information("[DEBUG] UpdateStartButtonState: InvokeRequired=true, marshalling to UI thread");
         startServerBtn.Invoke(UpdateStartButtonState);
         return;
       }
+
       bool steamCmdInstalled = FileIOManager.GetInstance().IsSteamCMDInstalled();
-      bool modsOk = m_modsValidated || ConfigurationManager.GetInstance().GetEnabledMods().Count == 0;
-      startServerBtn.Enabled = steamCmdInstalled && modsOk;
+      var validationResult = ConfigurationManager.GetInstance().GetLastValidationResult();
+      bool hasFatalErrors = validationResult?.HasFatalErrors() ?? false;
+      bool hasWarnings = (validationResult?.Warnings?.Count ?? 0) > 0;
+
+      Log.Information("[DEBUG] UpdateStartButtonState: SteamCmdInstalled={installed}, HasFatalErrors={hasFatal}, HasWarnings={hasWarn}, ValidationResult={result}",
+        steamCmdInstalled,
+        hasFatalErrors,
+        hasWarnings,
+        validationResult == null ? "NULL" : $"Valid={validationResult.IsValid}, Errors={validationResult.Errors.Count}, Warnings={validationResult.Warnings.Count}");
+
+      if (!steamCmdInstalled)
+      {
+        Log.Information("[DEBUG] UpdateStartButtonState: SteamCmd not installed, disabling button");
+        startServerBtn.Enabled = false;
+        UIStyleHelper.StyleDisabledButton(startServerBtn);
+        startServerBtn.Text = "Start Server";
+        return;
+      }
+
+      if (hasFatalErrors)
+      {
+        var fatalCount = validationResult?.Errors?.Count(e => e.Severity == ErrorSeverity.FATAL) ?? 0;
+        Log.Information("[DEBUG] UpdateStartButtonState: Setting button to DISABLED/RED due to {fatalCount} fatal errors", fatalCount);
+        startServerBtn.Enabled = false;
+        UIStyleHelper.StyleErrorButton(startServerBtn);
+        startServerBtn.Text = $"Start Server (Invalid: {fatalCount} error{(fatalCount != 1 ? "s" : "")})";
+        string tooltip = $"Fix {fatalCount} validation error{(fatalCount != 1 ? "s" : "")} before launch";
+        if (startServerBtn.Tag is ToolTip tt)
+        {
+          tt.SetToolTip(startServerBtn, tooltip);
+        }
+        Log.Information("[DEBUG] UpdateStartButtonState: Button.Enabled={enabled}, Button.BackColor={color}, Button.Text={text}",
+          startServerBtn.Enabled,
+          startServerBtn.BackColor,
+          startServerBtn.Text);
+      }
+      else if (hasWarnings)
+      {
+        var warningCount = validationResult?.Warnings?.Count ?? 0;
+        Log.Information("[DEBUG] UpdateStartButtonState: Setting button to ENABLED/ORANGE due to {warningCount} warnings", warningCount);
+        startServerBtn.Enabled = true;
+        UIStyleHelper.StyleWarningButton(startServerBtn);
+        startServerBtn.Text = $"Start Server ({warningCount} warning{(warningCount != 1 ? "s" : "")})";
+        string tooltip = $"Server will launch with {warningCount} warning{(warningCount != 1 ? "s" : "")}";
+        if (startServerBtn.Tag is ToolTip tt)
+        {
+          tt.SetToolTip(startServerBtn, tooltip);
+        }
+        Log.Information("[DEBUG] UpdateStartButtonState: Button.Enabled={enabled}, Button.BackColor={color}", startServerBtn.Enabled, startServerBtn.BackColor);
+      }
+      else
+      {
+        Log.Information("[DEBUG] UpdateStartButtonState: Setting button to ENABLED/NORMAL (no errors/warnings)");
+        startServerBtn.Enabled = true;
+        UIStyleHelper.StyleSuccessButton(startServerBtn);
+        startServerBtn.Text = "Start Server";
+        Log.Information("[DEBUG] UpdateStartButtonState: Button.Enabled={enabled}, Button.BackColor={color}", startServerBtn.Enabled, startServerBtn.BackColor);
+      }
     }
 
     /// <summary>
@@ -2025,6 +2530,7 @@ namespace ReforgerServerApp
       ProcessManager.GetInstance().UpdateServerStatusEvent -= HandleServerStatusEvent;
       ConfigurationManager.GetInstance().UpdateScenarioIdFromLoadedConfigEvent -= HandleUpdateScenarioIdFromLoadedConfigEvent;
       ProcessManager.GetInstance().ScenarioRotationSwitchEvent -= HandleScenarioRotationSwitchEvent;
+      ConfigurationManager.GetInstance().ValidationStateChanged -= HandleValidationStateChanged;
       m_serverStatusParser.UpdateServerStatus -= HandleServerStatusEvent;
       ConfigurationManager.GetInstance().GetEnabledMods().ListChanged -= OnEnabledModsChanged;
 

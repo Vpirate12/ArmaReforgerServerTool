@@ -16,6 +16,7 @@ using ReforgerServerApp.Components;
 using System.Text;
 using System.Collections;
 using System.Text.Json;
+using ReforgerServerApp.Models;
 
 namespace ReforgerServerApp
 {
@@ -48,6 +49,11 @@ namespace ReforgerServerApp
     public delegate void UpdateScenarioIdFromLoadedConfig(object sender, ScenarioIdEventArgs e);
     public event UpdateScenarioIdFromLoadedConfig UpdateScenarioIdFromLoadedConfigEvent;
 
+    public delegate void ValidationStateChangedEventHandler(object sender, ValidationResult result);
+    public event ValidationStateChangedEventHandler ValidationStateChanged;
+
+    private ValidationResult m_lastValidationResult;
+
     private ConfigurationManager()
     {
       m_serverParamsDictionary = new Dictionary<string, ServerParameter>();
@@ -55,6 +61,7 @@ namespace ReforgerServerApp
       m_availableMods = new BindingList<Mod>();
       m_enabledMods = new BindingList<Mod>();
       m_serverConfig = new ServerConfiguration();
+      m_lastValidationResult = new ValidationResult();
     }
 
     public static ConfigurationManager GetInstance()
@@ -86,6 +93,14 @@ namespace ReforgerServerApp
     public Dictionary<string, AdvancedServerParameter> GetAdvancedServerParametersDictionary()
     {
       return m_advServerParamsDictionary;
+    }
+
+    /// <summary>
+    /// Get the last validation result for the enabled mods
+    /// </summary>
+    public ValidationResult GetLastValidationResult()
+    {
+      return m_lastValidationResult;
     }
 
     /// <summary>
@@ -354,6 +369,9 @@ namespace ReforgerServerApp
         }
       }
       AlphabetiseModLists();
+
+      // Trigger validation on mod list import
+      TriggerValidation();
     }
 
     /// <returns>Mod IDs of Mods in the server configuration as a List</returns>
@@ -466,6 +484,205 @@ namespace ReforgerServerApp
     protected virtual void OnUpdateScenarioIdFromLoadedConfig(ScenarioIdEventArgs e)
     {
       UpdateScenarioIdFromLoadedConfigEvent?.Invoke(this, e);
+    }
+
+    // ===== Sitrep Config Integration Methods =====
+
+    /// <summary>
+    /// Loads a mod configuration from Sitrep (or local fallback)
+    /// </summary>
+    public async Task<bool> LoadConfigFromSitrep(string configName)
+    {
+      Log.Information("ConfigurationManager - Loading config from Sitrep: {name}", configName);
+
+      try
+      {
+        var sitrepService = SitrepConfigService.GetInstance();
+        var scenario = await sitrepService.LoadConfiguration(configName);
+
+        if (scenario == null)
+        {
+          Log.Error("ConfigurationManager - Config not found: {name}", configName);
+          return false;
+        }
+
+        // Clear current enabled mods
+        m_enabledMods.Clear();
+
+        // Add mods from the loaded scenario
+        foreach (var modEntry in scenario.Mods)
+        {
+          var mod = new Mod(modEntry.ModId, modEntry.Name, modEntry.Version, modEntry.Required);
+          m_enabledMods.Add(mod);
+          Log.Debug("ConfigurationManager - Added mod from config: {name} ({id})", mod.GetModName(), mod.GetModID());
+        }
+
+        // Remove loaded mods from available list
+        var loadedModIds = scenario.Mods.Select(m => m.ModId).ToList();
+        var modsToRemove = m_availableMods.Where(m => loadedModIds.Contains(m.modId)).ToList();
+        foreach (var mod in modsToRemove)
+        {
+          m_availableMods.Remove(mod);
+        }
+
+        Log.Information("ConfigurationManager - Successfully loaded config: {name} ({modCount} mods)",
+          configName, scenario.Mods.Count);
+
+        return true;
+      }
+      catch (Exception ex)
+      {
+        Log.Error("ConfigurationManager - Error loading config from Sitrep: {msg}", ex.Message);
+        return false;
+      }
+    }
+
+    /// <summary>
+    /// Saves the current enabled mod configuration to Sitrep
+    /// </summary>
+    public async Task<bool> SaveConfigToSitrep(string configName, string description = "")
+    {
+      Log.Information("ConfigurationManager - Saving config to Sitrep: {name}", configName);
+
+      try
+      {
+        var scenario = new ModScenario
+        {
+          Id = Guid.NewGuid().ToString(),
+          Name = configName,
+          Description = description,
+          CreatedAt = DateTime.Now,
+          UpdatedAt = DateTime.Now
+        };
+
+        // Convert enabled mods to scenario entries
+        foreach (var mod in m_enabledMods)
+        {
+          scenario.Mods.Add(new ModEntry
+          {
+            ModId = mod.GetModID(),
+            Name = mod.GetModName(),
+            Version = mod.GetModVersion(),
+            Required = mod.IsModRequired()
+          });
+        }
+
+        var sitrepService = SitrepConfigService.GetInstance();
+        var success = await sitrepService.SaveConfiguration(scenario);
+
+        if (success)
+        {
+          Log.Information("ConfigurationManager - Successfully saved config: {name} ({modCount} mods)",
+            configName, scenario.Mods.Count);
+        }
+
+        return success;
+      }
+      catch (Exception ex)
+      {
+        Log.Error("ConfigurationManager - Error saving config to Sitrep: {msg}", ex.Message);
+        return false;
+      }
+    }
+
+    /// <summary>
+    /// Gets the list of available mod configurations from Sitrep
+    /// </summary>
+    public async Task<List<ModScenario>> GetAvailableConfigs()
+    {
+      Log.Information("ConfigurationManager - Loading available configs");
+
+      try
+      {
+        var sitrepService = SitrepConfigService.GetInstance();
+        var configs = await sitrepService.ListConfigurations();
+        Log.Information("ConfigurationManager - Found {count} available configs", configs.Count);
+        return configs;
+      }
+      catch (Exception ex)
+      {
+        Log.Error("ConfigurationManager - Error getting available configs: {msg}", ex.Message);
+        return new List<ModScenario>();
+      }
+    }
+
+    /// <summary>
+    /// Triggers validation of the current enabled mod list and fires ValidationStateChanged event.
+    /// Also applies auto-fixes: adds missing dependencies and reorders mods based on load order.
+    /// </summary>
+    public void TriggerValidation()
+    {
+      Log.Debug("[DEBUG] TriggerValidation() called - mod count: {modCount}", m_enabledMods.Count);
+
+      var validator = ModValidationService.GetInstance();
+      var fixResult = validator.ValidateAndFixMods(m_enabledMods.ToList());
+      m_lastValidationResult = fixResult.ValidationResult;
+
+      // Apply auto-fixed mods to the enabled list
+      if (fixResult.AddedMods.Count > 0)
+      {
+        Log.Information("ConfigurationManager - Applying {count} auto-added mods", fixResult.AddedMods.Count);
+        foreach (var addedMod in fixResult.AddedMods)
+        {
+          if (!m_enabledMods.Contains(addedMod))
+          {
+            m_enabledMods.Add(addedMod);
+            Log.Information("ConfigurationManager - Added missing dependency: {name} ({id})",
+              addedMod.GetModName(), addedMod.GetModID());
+          }
+        }
+      }
+
+      // Apply sorted mod list (reorder to correct load order)
+      if (fixResult.ModPositionChanges.Count > 0)
+      {
+        Log.Information("ConfigurationManager - Applying topological sort to reorder {count} mod(s)",
+          fixResult.ModPositionChanges.Count);
+
+        // Clear and rebuild the enabled mods list in sorted order
+        m_enabledMods.Clear();
+        foreach (var sortedMod in fixResult.SortedMods)
+        {
+          m_enabledMods.Add(sortedMod);
+        }
+
+        // Log the reordering details
+        foreach (var change in fixResult.ModPositionChanges)
+        {
+          var mod = fixResult.SortedMods.FirstOrDefault(m => m.GetModID().Equals(change.Key, StringComparison.OrdinalIgnoreCase));
+          if (mod != null)
+          {
+            Log.Information("ConfigurationManager - Reordered: {name} moved to position {index}",
+              mod.GetModName(), change.Value);
+          }
+        }
+      }
+
+      // Log the summary of validation results
+      ValidationLogger.LogValidationResult(m_lastValidationResult);
+
+      Log.Information("[DEBUG] ConfigurationManager - Validation result: IsValid={isValid}, FatalErrors={fatalErrors}, Errors={errors}, Warnings={warnings}, HasFatalErrors={hasFatal}",
+        m_lastValidationResult.IsValid,
+        m_lastValidationResult.Errors.Count(e => e.Severity == ErrorSeverity.FATAL),
+        m_lastValidationResult.Errors.Count,
+        m_lastValidationResult.Warnings.Count,
+        m_lastValidationResult.HasFatalErrors());
+
+      Log.Information("[DEBUG] ConfigurationManager - About to fire ValidationStateChanged event. Subscribers: {subscriberCount}",
+        ValidationStateChanged?.GetInvocationList().Length ?? 0);
+
+      // Fire the event so UI can update
+      OnValidationStateChanged(m_lastValidationResult);
+
+      Log.Information("[DEBUG] ConfigurationManager - ValidationStateChanged event fired");
+    }
+
+    /// <summary>
+    /// Sender for the 'ValidationStateChanged' Event
+    /// </summary>
+    protected virtual void OnValidationStateChanged(ValidationResult result)
+    {
+      ValidationStateChanged?.Invoke(this, result);
     }
   }
 }
