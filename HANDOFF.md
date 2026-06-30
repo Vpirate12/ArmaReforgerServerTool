@@ -1,12 +1,13 @@
-# Handoff: Sentinel Desktop — Session 2026-06-29
+# Handoff: Sentinel Desktop — Phase 1B.1 Architecture Complete
 
-**Status:** Phase 1A polished ✅ + Phase 1B (Scenario Rotation) design-to-code loop ready 🚀  
+**Status:** Phase 1A polished ✅ + Phase 1B.1 (Scenario Rotation) architecture & logic ✅ + Stage 3 UI 🚧  
 **Branch:** `feature/scenario-manager`  
-**Latest Commit:** edf766c (Add BRAND.md and realign Colors.cs to STG brand system)  
+**Latest Commit:** 2b6b291 (Add HANDOFF_PHASE_1B1.md: Architecture & logic complete, ready for DevOps review)  
 **Last Updated:** 2026-06-29  
 **GitHub Fork:** https://github.com/Vpirate12/ArmaReforgerServerTool
 
-**Product Authority:** SENTINEL_DESKTOP.md (vision) + BRAND.md (visual system)
+**Product Authority:** SENTINEL_DESKTOP.md (vision) + BRAND.md (visual system)  
+**Feature Authority:** HANDOFF_PHASE_1B1.md (complete architecture handoff)
 
 ---
 
