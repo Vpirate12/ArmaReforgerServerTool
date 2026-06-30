@@ -1,10 +1,12 @@
-# Handoff: ArmaReforgerServerTool Session 2026-06-29
+# Handoff: Sentinel Desktop — Session 2026-06-29
 
-**Status:** Phase 1A polished ✅ + Phase 1B (Flask webapp) in progress 🚧  
+**Status:** Phase 1A polished ✅ + Phase 1B (Scenario Rotation) design-to-code loop ready 🚀  
 **Branch:** `feature/scenario-manager`  
-**Latest Commit:** 1980a9a (Phase 1A polish: Mod validation, Sitrep UI theming, config services)  
+**Latest Commit:** edf766c (Add BRAND.md and realign Colors.cs to STG brand system)  
 **Last Updated:** 2026-06-29  
 **GitHub Fork:** https://github.com/Vpirate12/ArmaReforgerServerTool
+
+**Product Authority:** SENTINEL_DESKTOP.md (vision) + BRAND.md (visual system)
 
 ---
 
